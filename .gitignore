@@ -1,1 +1,5 @@
-.vscode/settings.json
+.vscode/
+manifest
+test.c
+t
+.server/sum-server

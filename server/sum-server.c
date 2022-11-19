@@ -28,7 +28,7 @@ int writeToFd(int fd, const char *message) {
 
   do {
     int bytesWritten = write(fd, message + totalBytesWritten, len - totalBytesWritten);
-
+    1;
     if( bytesWritten == -1 ) {
       perror("writeToFd|write");
       return -1;
