@@ -3,8 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
-#include "connection.h"
-#include <time.h>
+#include "user.h"
+
 
 void release(struct user *connection) {
   free(connection->uname);
