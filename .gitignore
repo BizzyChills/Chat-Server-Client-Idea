@@ -2,4 +2,4 @@
 manifest
 test.c
 t
-.server/sum-server
+server/sum-server
