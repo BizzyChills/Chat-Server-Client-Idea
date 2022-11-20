@@ -29,8 +29,9 @@ struct user *conn_create(const char *uname, int fd) {
   newConn->uname = (char *) malloc(strlen(uname) * sizeof(char) + 1);
   newConn->uname = strcpy(newConn->uname, uname);
   newConn->fd = fd;
-  newConn->channel = "general";
-  newConn->reqs_len = 0;
+  newConn->channel = "general"; // current channel. default is general
+  newConn->reqs_len = 0; // length of the request list
+  newConn->out_len = 0; // number of messages stored in outBuffer, not the size of the buffer
   asprintf(&newConn->outBuffer, "System:\n\tHello %s! Welcome to the server!\n%s\n", uname, system("date +%T"));
   newConn->next = NULL;
   newConn->prev = NULL;
@@ -79,11 +80,19 @@ struct user *conn_remove(struct user **list, struct user *toRemove) {
   return *list;
 }
 
-struct user *conn_get(struct user *list, const int fd) {
+struct user *get_user(struct user *list, const int fd, const char *uname) {
   struct user *it = list;
 
-  while( it != NULL ) {
-    if(it->fd == fd){
+  while( it != NULL && !uname) {
+    if(it->fd == fd ){
+      return it;
+    }
+
+    it = it->next;
+  }
+
+  while( it != NULL && uname) {
+    if( strcmp(it->uname, uname) == 0 ) {
       return it;
     }
 
@@ -126,4 +135,33 @@ int get_reqt(struct user *conn, char *from){
   // index = index == conn->reqs_len ? -1 : index;
   
   return index == conn->reqs_len ? -1 : index;
+}
+
+void update_buffers(struct user *conn, const char *message){
+  while(conn){
+    if(conn->out_len == MAX_OUT) conn = conn->next;
+    conn->outBuffer = mergeStrings(conn->outBuffer, message);
+    conn->out_len++;
+    conn = conn->next;
+  }
+}
+
+int write_clients(struct user *conn) {
+  int err = 0;
+
+  while(conn){ 
+    int len = strlen(conn->outBuffer);
+    int totalBytesWritten = 0;
+    do {
+      int bytesWritten = write(conn->fd, conn->outBuffer + totalBytesWritten, len - totalBytesWritten);
+      if( bytesWritten == -1 ) {
+        perror("writeToFd|write");
+        err = -1;
+      }
+
+      totalBytesWritten += bytesWritten;
+    } while(totalBytesWritten < len);
+    conn = conn->next;
+  }
+  return err;
 }

@@ -1,5 +1,6 @@
 .vscode/
 manifest
+Makefile
 test.c
 t
 server/sum-server
