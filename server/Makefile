@@ -2,10 +2,8 @@
 all: server
 CFLAGS=-g
 
-server: sum-server.c user.c utils.c commands.h user.h utils.h
-	cc $(CFLAGS) sum-server.c user.c utils.c -o sum-server
+server: chat-server.c user.c utils.c commands.h user.h utils.h
+	cc $(CFLAGS) chat-server.c user.c utils.c -o chat-server
 
-test: test.c
-	cc $(CFLAGS) test.c -o t
 clean:
-	rm -f sum-server
+	rm -f chat-server
