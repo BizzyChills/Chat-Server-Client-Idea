@@ -6,6 +6,8 @@
 #define MAX_UNAME 16
 #define MIN_UNAME 3
 #define MAX_OUT 3 // Maximum number of output messages queued. prioritize all system messages, then all private messages, then public messages
+#define CHANL_GEN "general"
+#define CHANL_NICHE "niche"
 
 #include <stdio.h>
 
@@ -16,7 +18,7 @@ struct user {
   char *req_from[MAX_PRIV];
   char *reqs[MAX_PRIV];
   int reqs_len;
-  char *outBuffer;
+  char *outbuffer;
   int out_len;
   struct user *next;
   struct user *prev;
@@ -29,7 +31,7 @@ struct user *conn_insert(struct user **list, struct user *newConnection);
 struct user *conn_remove(struct user **list, struct user *toRemove);
 // void conn_fprint(FILE* file, struct user *list);
 int conn_var_index(struct user *conn, char *from);
-void update_buffers(struct user *conn, const char *message);
+void update_buffers(struct user *conn, const char *message, const char *channel);
 int write_clients(struct user *conn);
 
 #endif

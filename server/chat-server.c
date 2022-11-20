@@ -44,15 +44,14 @@ int writeToFd(int fd, const char *message) {
 struct connection *processHello(int argc, char *argv[], struct connection *connList, int fd) {
   struct user *conn;
 
-  char *err = argc !=2 ? "error: expected 'HELLO [key]'\n" : "error: already said HELLO. My pleasantries are exhausted; my apologies. :'(\n";
+  char *err = argc !=2 ? "error: expected 'HELLO [uname]'\n" : "error: already said HELLO. My pleasantries are exhausted; my apologies. :'(\n";
   
   if( (conn = conn_get(connList, fd)) != NULL ) { // if you have said hello before
-    conn->outBuffer = mergeStrings(2, err, "\n");
     return connList;
   }
 
   if( argc != 2 ) {
-    writeToFd(fd, err); // write error to client, can't add to outBuffer because we don't have a connection yet
+    writeToFd(fd, err); // write error to client, can't add to outbuffer because we don't have a connection yet
     return connList;
   }
 
@@ -61,10 +60,6 @@ struct connection *processHello(int argc, char *argv[], struct connection *connL
   struct user *newConn = conn_create(uniqueKey, fd);
 
   connList = conn_insert(&connList, newConn);
-
-  newConn->outBuffer = mergeStrings(4, CMD_HELLO, " ", uniqueKey, "\n");
-
-  // writeToFd(newConn->fd, returnMsg); 
 
   return connList;
 }
@@ -81,12 +76,12 @@ struct user *processGoodbye(int argc, char *argv[], struct user *connList, int f
   }
   
   if(argc != 1) {
-    conn->outBuffer = mergeStrings(2, err, "\n");
+    conn->outbuffer = mergeStrings(2, err, "\n");
     return connList;
   }
   char *uniqueKey = conn->uname;
 
-  conn->outBuffer = mergeStrings(3, CMD_GOODBYE, ARGS_DELIM_STR, uniqueKey);
+  conn->outbuffer = mergeStrings(3, "Goodbye", ARGS_DELIM_STR, uniqueKey);
 
   // connList = conn_remove(&connList, conn); // don't remove from list until we've written to the client
 
@@ -112,43 +107,29 @@ struct user *processMessage(char *message, struct user *connList, int fd){
     token = strtok(NULL, delims);
   }
 
+  connList = processEscape(tokenIndex, tokens, connList, fd);
+
   char *command = tokens[0];
+  struct user *conn = conn_get(connList, fd);
 
-// //   // TODO: update processHello to handle revised format
-  if( strcmp(command, CMD_HELLO) == 0  ) {
-    connList = processHello(tokenIndex, tokens, connList, fd);
-  }
-//   // TODO: update processGoodbye to handle revised format
-  else if( strcmp(command, CMD_GOODBYE) == 0 ) {
+  if( strcmp(command, CMD_EXIT) == 0 ) 
     connList = processGoodbye(tokenIndex, tokens, connList, fd);
-  }
-  // TODO: update processSum to handle optional variable
-  else if( strcmp(command, CMD_SUM) == 0 ) {
-    processSum(tokenIndex, tokens, connList, fd);
-  }
-  // TODO: handle new STORED_VALUE command
-  else if( strcmp(command, CMD_STORED_VALUE) == 0 ) {
-    processGet(tokenIndex, tokens, connList, fd);
-  }
-  
-  else if( strcmp(command, CMD_NOOP) == 0 ) {
-    // printf("NOOP is technically not an error");
-    // writeToFd(fd, "NOOP is technically not an error\n");
-    struct user *conn = conn_get(connList, fd);
-    
-    char *ret = conn == NULL ? "Well, are you going to say HELLO?\n" : "NOOP is technically not an error\n";
-
-    if(conn == NULL) writeToFd(fd, ret);
-
-    else conn->outBuffer = mergeStrings(2, ret, "\0");
-  }
-  else {
-    struct user *conn = conn_get(connList, fd);
-
-    char *ret = conn == NULL ? "error: invalid command. Not even a HELLO huh? :'(\n" : mergeStrings(3, "error: invalid command '", command, "'. Keep your \"arguments\" to yourself\n");
-    if(conn == NULL) writeToFd(fd, ret);
-
-    else conn->outBuffer = ret;
+  else if(strcmp(command, CMD_CHANNEL) == 0)
+    connList = processChannel(tokenIndex, tokens, connList, fd);
+  else if(strcmp(command, CMD_DM) == 0)
+    connList = processDM(tokenIndex, tokens, connList, fd);
+  else if(strcmp(command, CMD_HELP) == 0)
+    connList = processHelp(tokenIndex, tokens, connList, fd);
+  else if(strcmp(command, CMD_REQS) == 0)
+    connList = processRequests(tokenIndex, tokens, connList, fd);
+  else if(strcmp(command, CMD_HELLO) == 0 ) 
+    connList = processHello(tokenIndex, tokens, connList, fd);
+  else if(conn == NULL){
+    char *ret = "error: expected HELLO [uname].\n";
+    writeToFd(fd, ret);
+  } 
+  else if(conn->channel == CHANL_GEN || conn->channel == CHANL_NICHE){
+    update_buffers(connList, tokens, conn->channel);
   }
 
   free(messageCopy);
@@ -306,22 +287,33 @@ int main(int argc, char *argv[]){
               numberClients -= 1;
             }
           }
-          if(clientFds[currFd].revents & POLLOUT ) {
-            struct user *currClient = conn_get(clients, clientFds[currFd].fd);
-            if(currClient == NULL){
-              clientFds[currFd].events &= ~POLLOUT;
-              continue;
+          if(clientFds[currFd].revents & POLLOUT ) { // write to socket if nonblocking
+            for(int i = 0; i < numberClients; i++){
+              struct user *curr_user;
+              if(clientFds[i].revents & POLLOUT && (curr_user = get_user(clients, clientFds[i].fd, NULL)) && curr_user->outbuffer != NULL){
+                writeToFd(clientFds[i].fd, curr_user->outbuffer);
+                // get_user(clients, clientFds[i].fd, NULL)->outbuffer = NULL;
+                curr_user->outbuffer = NULL;
+                // clientFds[i].events &= ~POLLOUT;
+                clientFds[i].events |= POLLIN;
+              }
             }
-            int bytesWritten = writeToFd(currClient->fd, currClient->outBuffer);
-            if (bytesWritten == -1) {
-              perror("write");
-            }
-            while (bytesWritten > 0) {
-              bytesWritten = writeToFd(currClient->fd, currClient->outBuffer);
-              currClient->outBuffer = &currClient->outBuffer[bytesWritten];
-            }
-            clientFds[currFd].events = POLLIN;
-            currClient->outBuffer = NULL;
+            // struct user *currClient = conn_get(clients, clientFds[currFd].fd);
+            // if(currClient == NULL){
+            //   clientFds[currFd].events &= ~POLLOUT;
+            //   continue;
+            // }
+            // int bytesWritten = writeToFd(currClient->fd, currClient->outbuffer);
+            // if (bytesWritten == -1) {
+            //   perror("write");
+            // }
+            // while (bytesWritten > 0) {
+            //   bytesWritten = writeToFd(currClient->fd, currClient->outbuffer);
+            //   currClient->outbuffer = &currClient->outbuffer[bytesWritten];
+            // }
+            // // clientFds[currFd].events = POLLIN;
+            // clientFds[currFd].events |= POLLIN;
+            // currClient->outbuffer = NULL;
           }
         }
         currFd += 1;

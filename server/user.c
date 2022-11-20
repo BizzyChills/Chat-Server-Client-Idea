@@ -9,8 +9,8 @@
 void release(struct user *connection) {
   free(connection->uname);
 
-  if (connection->outBuffer)
-    free(connection->outBuffer);
+  if (connection->outbuffer)
+    free(connection->outbuffer);
 
   for(int i = 0; i < connection->reqs_len; i++) {
     if (connection->req_from[i])
@@ -29,10 +29,10 @@ struct user *conn_create(const char *uname, int fd) {
   newConn->uname = (char *) malloc(strlen(uname) * sizeof(char) + 1);
   newConn->uname = strcpy(newConn->uname, uname);
   newConn->fd = fd;
-  newConn->channel = "general"; // current channel. default is general
+  newConn->channel = CHANL_GEN; // current channel. default is general
   newConn->reqs_len = 0; // length of the request list
-  newConn->out_len = 0; // number of messages stored in outBuffer, not the size of the buffer
-  asprintf(&newConn->outBuffer, "System:\n\tHello %s! Welcome to the server!\n%s\n", uname, system("date +%T"));
+  newConn->out_len = 0; // number of messages stored in outbuffer, not the size of the buffer
+  asprintf(&newConn->outbuffer, "System:\n\tHello %s! Welcome to the server!\n%s\n", uname, system("date +%T"));
   newConn->next = NULL;
   newConn->prev = NULL;
 
@@ -137,31 +137,32 @@ int get_reqt(struct user *conn, char *from){
   return index == conn->reqs_len ? -1 : index;
 }
 
-void update_buffers(struct user *conn, const char *message){
+void update_buffers(struct user *conn, const char *message, const char *channel) {
   while(conn){
     if(conn->out_len == MAX_OUT) conn = conn->next;
-    conn->outBuffer = mergeStrings(conn->outBuffer, message);
+    if(conn->channel != channel) conn = conn->next;
+    conn->outbuffer = mergeStrings(conn->outbuffer, message);
     conn->out_len++;
     conn = conn->next;
   }
 }
 
-int write_clients(struct user *conn) {
-  int err = 0;
-
-  while(conn){ 
-    int len = strlen(conn->outBuffer);
-    int totalBytesWritten = 0;
-    do {
-      int bytesWritten = write(conn->fd, conn->outBuffer + totalBytesWritten, len - totalBytesWritten);
-      if( bytesWritten == -1 ) {
-        perror("writeToFd|write");
-        err = -1;
-      }
-
-      totalBytesWritten += bytesWritten;
-    } while(totalBytesWritten < len);
-    conn = conn->next;
-  }
-  return err;
-}
+// int write_clients(struct user *conn) {
+//   int err = 0;
+// 
+//   while(conn){ 
+//     int len = strlen(conn->outbuffer);
+//     int totalBytesWritten = 0;
+//     do {
+//       int bytesWritten = write(conn->fd, conn->outbuffer + totalBytesWritten, len - totalBytesWritten);
+//       if( bytesWritten == -1 ) {
+//         perror("writeToFd|write");
+//         err = -1;
+//       }
+// 
+//       totalBytesWritten += bytesWritten;
+//     } while(totalBytesWritten < len);
+//     conn = conn->next;
+//   }
+//   return err;
+// }
