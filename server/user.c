@@ -1,16 +1,10 @@
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
 #include "user.h"
 
 
 void release(struct user *connection) {
   free(connection->uname);
-
-  if (connection->outbuffer)
-    free(connection->outbuffer);
+  free(connection->channel);
 
   for(int i = 0; i < connection->reqs_len; i++) {
     if (connection->req_from[i])
@@ -18,6 +12,9 @@ void release(struct user *connection) {
     if (connection->reqs[i])
       free(connection->reqs[i]);
   }
+
+  if (connection->outbuffer)
+    free(connection->outbuffer);
 
   close(connection->fd);
   free(connection);
@@ -29,10 +26,11 @@ struct user *conn_create(const char *uname, int fd) {
   newConn->uname = (char *) malloc(strlen(uname) * sizeof(char) + 1);
   newConn->uname = strcpy(newConn->uname, uname);
   newConn->fd = fd;
-  newConn->channel = CHANL_GEN; // current channel. default is general
+  newConn->channel = malloc(strlen(CHANL_GEN)); // current channel. default is general
+  newConn->channel = strcpy(newConn->channel, CHANL_GEN);
   newConn->reqs_len = 0; // length of the request list
-  newConn->out_len = 0; // number of messages stored in outbuffer, not the size of the buffer
-  asprintf(&newConn->outbuffer, "System:\n\tHello %s! Welcome to the server!\n%s\n", uname, system("date +%T"));
+  asprintf(&newConn->outbuffer, "System:\n\tHello %s! Welcome to the server!\n%s\n", uname, time_now());
+  newConn->out_len = 1; // number of messages stored in outbuffer, not the size of the buffer
   newConn->next = NULL;
   newConn->prev = NULL;
 
@@ -82,20 +80,19 @@ struct user *conn_remove(struct user **list, struct user *toRemove) {
 
 struct user *get_user(struct user *list, const int fd, const char *uname) {
   struct user *it = list;
+  while( it != NULL && uname != NULL) { // search by uname
+    if( strcmp(it->uname, uname) == 0 ) {
+      return it;
+    }
 
-  while( it != NULL && !uname) {
+  it = list;
+  while( it != NULL && uname == NULL ) { // search by fd
     if(it->fd == fd ){
       return it;
     }
 
     it = it->next;
   }
-
-  while( it != NULL && uname) {
-    if( strcmp(it->uname, uname) == 0 ) {
-      return it;
-    }
-
     it = it->next;
   }
 
@@ -137,13 +134,14 @@ int get_reqt(struct user *conn, char *from){
   return index == conn->reqs_len ? -1 : index;
 }
 
-void update_buffers(struct user *conn, const char *message, const char *channel) {
-  while(conn){
-    if(conn->out_len == MAX_OUT) conn = conn->next;
-    if(conn->channel != channel) conn = conn->next;
-    conn->outbuffer = mergeStrings(conn->outbuffer, message);
-    conn->out_len++;
-    conn = conn->next;
+void update_buffers(struct user *connList, struct user *from, char *message[], const int len) {
+  char *channel = from->channel;
+  while(connList){
+    if(connList->out_len == MAX_OUT) connList = connList->next;
+    if(strcmp(connList->channel, channel) != 0) connList = connList->next;
+    connList->outbuffer = mergeStrings(len + 3, from->uname, ":\n\t", message, time_now());
+    connList->out_len++;
+    connList = connList->next;
   }
 }
 

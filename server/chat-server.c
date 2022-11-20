@@ -21,6 +21,7 @@
 #define MAX_N_TOKENS 10
 #define MAX_CONNECTIONS 1024
 #define RANDOM_MSG_LENGTH 8
+#define TEMP_PORT 57300
 
 int writeToFd(int fd, const char *message) {
   int len = strlen(message);
@@ -41,23 +42,22 @@ int writeToFd(int fd, const char *message) {
 }
 
 // // HELLO uniqueKey
-struct connection *processHello(int argc, char *argv[], struct connection *connList, int fd) {
+struct user *processHello(int argc, char *argv[], struct user *connList, int fd) {
   struct user *conn;
+  char *username = argv[1];
 
-  char *err = argc !=2 ? "error: expected 'HELLO [uname]'\n" : "error: already said HELLO. My pleasantries are exhausted; my apologies. :'(\n";
-  
-  if( (conn = conn_get(connList, fd)) != NULL ) { // if you have said hello before
+  if( (conn = get_user(connList, fd, argv[1])) != NULL ) { // if you have said hello before
     return connList;
   }
 
   if( argc != 2 ) {
+    char *err = "error: expected 'HELLO [uname]'\n";
     writeToFd(fd, err); // write error to client, can't add to outbuffer because we don't have a connection yet
     return connList;
   }
 
-  char *uniqueKey = argv[1];
 
-  struct user *newConn = conn_create(uniqueKey, fd);
+  struct user *newConn = conn_create(username, fd);
 
   connList = conn_insert(&connList, newConn);
 
@@ -65,23 +65,17 @@ struct connection *processHello(int argc, char *argv[], struct connection *connL
 }
 
 // GOODBYE
-struct user *processGoodbye(int argc, char *argv[], struct user *connList, int fd) {
-  struct user *conn = conn_get(connList, fd);
+struct user *processExit(int argc, char *argv[], struct user *connList, int fd) {
+  struct user *conn = get_user(connList, fd, NULL);
   
-  char *err= argc != 1 ? "error: expected 'GOODBYE'\n" : "GOODBYE \"stranger\" (No session created)\n";
-
   if (conn == NULL) {
-    writeToFd(fd, err);
+    char *ret = "GOODBYE \"stranger\" (No session created)\n";
+    writeToFd(fd, ret);
     return connList;
   }
   
-  if(argc != 1) {
-    conn->outbuffer = mergeStrings(2, err, "\n");
-    return connList;
-  }
-  char *uniqueKey = conn->uname;
-
-  conn->outbuffer = mergeStrings(3, "Goodbye", ARGS_DELIM_STR, uniqueKey);
+  conn->outbuffer = mergeStrings(6, SYS_MSG, "Goodbye ", conn->uname, "\n", time_now(), "\n");
+  conn->out_len++;
 
   // connList = conn_remove(&connList, conn); // don't remove from list until we've written to the client
 
@@ -107,29 +101,33 @@ struct user *processMessage(char *message, struct user *connList, int fd){
     token = strtok(NULL, delims);
   }
 
-  connList = processEscape(tokenIndex, tokens, connList, fd);
+  // connList = processEscape(tokenIndex, tokens, connList, fd);
 
   char *command = tokens[0];
-  struct user *conn = conn_get(connList, fd);
 
   if( strcmp(command, CMD_EXIT) == 0 ) 
-    connList = processGoodbye(tokenIndex, tokens, connList, fd);
-  else if(strcmp(command, CMD_CHANNEL) == 0)
-    connList = processChannel(tokenIndex, tokens, connList, fd);
-  else if(strcmp(command, CMD_DM) == 0)
-    connList = processDM(tokenIndex, tokens, connList, fd);
-  else if(strcmp(command, CMD_HELP) == 0)
-    connList = processHelp(tokenIndex, tokens, connList, fd);
-  else if(strcmp(command, CMD_REQS) == 0)
-    connList = processRequests(tokenIndex, tokens, connList, fd);
+    connList = processExit(tokenIndex, tokens, connList, fd);
+  // else if(strcmp(command, CMD_CHANNEL) == 0)
+  //   connList = processChannel(tokenIndex, tokens, connList, fd);
+  // else if(strcmp(command, CMD_DM) == 0)
+  //   connList = processDM(tokenIndex, tokens, connList, fd);
+  // else if(strcmp(command, CMD_HELP) == 0)
+  //   connList = processHelp(tokenIndex, tokens, connList, fd);
+  // else if(strcmp(command, CMD_REQS) == 0)
+  //   connList = processRequests(tokenIndex, tokens, connList, fd);
   else if(strcmp(command, CMD_HELLO) == 0 ) 
     connList = processHello(tokenIndex, tokens, connList, fd);
-  else if(conn == NULL){
+  else{
+    struct user *conn = get_user(connList, fd, NULL);
+    if(conn == NULL){
     char *ret = "error: expected HELLO [uname].\n";
     writeToFd(fd, ret);
-  } 
-  else if(conn->channel == CHANL_GEN || conn->channel == CHANL_NICHE){
-    update_buffers(connList, tokens, conn->channel);
+    } 
+    else if(strcmp(conn->channel, CHANL_GEN) == 0 || strcmp(conn->channel, CHANL_NICHE) == 0){
+      update_buffers(connList, conn, tokens, tokenIndex);
+    }
+    printf("channel in: %s\n== gen: %s\n==niche: %s\n", conn->channel, strcmp(conn->channel, CHANL_GEN), strcmp(conn->channel, CHANL_NICHE));
+    fflush(stdout);
   }
 
   free(messageCopy);
@@ -183,17 +181,18 @@ void usage(int argc, char *argv[]) {
 ///   Be sure to remove these from the Makefile and the header list of sum-server.c
 ///   -aaron
 int main(int argc, char *argv[]){
-  if (argc != 2) {
-    usage(argc, argv);
-    exit(1);
-  }
+  // if (argc != 2) {
+  //   usage(argc, argv);
+  //   exit(1);
+  // }
   // setup socket and signal handlers
   // bind socket to port
   struct sockaddr_in address;
   struct in_addr ipAddress;
 
   address.sin_family = AF_INET;
-  address.sin_port = htons(atoi(argv[1]));
+  // address.sin_port = htons(atoi(argv[1]));
+  address.sin_port = htons(TEMP_PORT);
   address.sin_addr.s_addr = INADDR_ANY;
 
   int listenerFd = socket(AF_INET, SOCK_STREAM, 0);
@@ -248,9 +247,9 @@ int main(int argc, char *argv[]){
 
           // check for errors
           if( clientFds[currFd].revents & (POLLHUP | POLLERR) ) {
-            struct user *conn = conn_get(clients, clientFds[currFd].fd);
-            if (conn != NULL) {
-              clients = conn_remove(&clients, conn);
+            struct user *curr_user = get_user(clients, clientFds[currFd].fd, NULL);
+            if (curr_user != NULL) {
+              clients = conn_remove(&clients, curr_user);
             }
             // close(clientFds[currFd].fd);
             clientFds[currFd] = clientFds[numberClients - 1];
@@ -259,7 +258,7 @@ int main(int argc, char *argv[]){
           }
 
           // Handle socket data when ready
-          if( clientFds[currFd].revents & POLLIN ) {
+          if(clientFds[currFd].revents & POLLIN ) {
             int bytesRead = read(clientFds[currFd].fd, buffer, BUFSIZ);
 
             buffer[bytesRead] = '\0';
@@ -279,7 +278,7 @@ int main(int argc, char *argv[]){
               clientFds[currFd].events |= POLLOUT;
             }
             else{
-              struct user *conn = conn_get(clients, clientFds[currFd].fd);
+              struct user *conn = get_user(clients, clientFds[currFd].fd, NULL);
               if (conn != NULL) clients = conn_remove(&clients, conn);
               
               // close(clientFds[currFd].fd);
@@ -292,13 +291,14 @@ int main(int argc, char *argv[]){
               struct user *curr_user;
               if(clientFds[i].revents & POLLOUT && (curr_user = get_user(clients, clientFds[i].fd, NULL)) && curr_user->outbuffer != NULL){
                 writeToFd(clientFds[i].fd, curr_user->outbuffer);
-                // get_user(clients, clientFds[i].fd, NULL)->outbuffer = NULL;
                 curr_user->outbuffer = NULL;
+                curr_user->out_len = 0;
                 // clientFds[i].events &= ~POLLOUT;
-                clientFds[i].events |= POLLIN;
+                clientFds[i].events = POLLIN;
+                poll(clientFds, numberClients, 0);
               }
             }
-            // struct user *currClient = conn_get(clients, clientFds[currFd].fd);
+            // struct user *currClient = get_user(clients, clientFds[currFd].fd);
             // if(currClient == NULL){
             //   clientFds[currFd].events &= ~POLLOUT;
             //   continue;

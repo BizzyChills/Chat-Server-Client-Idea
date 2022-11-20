@@ -19,7 +19,7 @@ int main() {
     serverAddress.sin_port = htons(PORT);
     inet_aton(IP_ADDRESS, &serverAddress.sin_addr);
 
-    int serverFd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+    int serverFd = socket(AF_INET, SOCK_STREAM, 0);
 
     if(serverFd == -1 ) {
         perror("socket");
@@ -37,20 +37,17 @@ int main() {
 
     for(;;) {
         // createRandomMsg(randomMsg, RANDOM_MSG_LENGTH);
-        if (!response && !command) {
-            printf("send: ");
-            fgets(command, BUFSIZ - 1, stdin);
+        printf("send: ");
+        fgets(command, BUFSIZ - 1, stdin);
+        if(command)
             send(serverFd, command, strlen(command), 0);
-        }
 
         // real implementations shouldn't assume the entire message will be present in 1 read
         int bytesRead = read(serverFd, response, BUFSIZ - 1);
         response[bytesRead] = 0;
         printf("recieve: %s\n", response);
-        response = NULL;
-        command = NULL;
 
-        if (strcmp(command, "GOODBYE\n") == 0) break;
+        if (strcmp(command, ">EXIT\n") == 0) break;
         else sleep(1);
     }
 

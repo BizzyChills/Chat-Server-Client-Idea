@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 
 #ifndef USER_H
 #define USER_H
@@ -5,11 +6,18 @@
 #define MAX_USER 100
 #define MAX_UNAME 16
 #define MIN_UNAME 3
-#define MAX_OUT 3 // Maximum number of output messages queued. prioritize all system messages, then all private messages, then public messages
+#define MAX_OUT 10 // Maximum number of output messages queued. prioritize all system messages, then all private messages, then public messages
 #define CHANL_GEN "general"
 #define CHANL_NICHE "niche"
+#define SYS_MSG "System:\n\t"
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+
+#include "utils.h"
 
 struct user {
   char *uname;
@@ -31,7 +39,7 @@ struct user *conn_insert(struct user **list, struct user *newConnection);
 struct user *conn_remove(struct user **list, struct user *toRemove);
 // void conn_fprint(FILE* file, struct user *list);
 int conn_var_index(struct user *conn, char *from);
-void update_buffers(struct user *conn, const char *message, const char *channel);
-int write_clients(struct user *conn);
+void update_buffers(struct user *conn, struct user *from, char *message[], const int len);
+// int write_clients(struct user *conn);
 
 #endif
