@@ -45,7 +45,7 @@ int main() {
         // real implementations shouldn't assume the entire message will be present in 1 read
         int bytesRead = read(serverFd, response, BUFSIZ - 1);
         response[bytesRead] = 0;
-        printf("recieve: %s\n", response);
+        printf("%s\n", response);
 
         if (strcmp(command, ">EXIT\n") == 0) break;
         else sleep(1);

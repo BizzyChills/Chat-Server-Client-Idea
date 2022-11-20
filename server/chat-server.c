@@ -56,7 +56,6 @@ struct user *processHello(int argc, char *argv[], struct user *connList, int fd)
     return connList;
   }
 
-
   struct user *newConn = conn_create(username, fd);
 
   connList = conn_insert(&connList, newConn);
@@ -126,7 +125,7 @@ struct user *processMessage(char *message, struct user *connList, int fd){
     else if(strcmp(conn->channel, CHANL_GEN) == 0 || strcmp(conn->channel, CHANL_NICHE) == 0){
       update_buffers(connList, conn, tokens, tokenIndex);
     }
-    printf("channel in: %s\n== gen: %s\n==niche: %s\n", conn->channel, strcmp(conn->channel, CHANL_GEN), strcmp(conn->channel, CHANL_NICHE));
+    printf("channel in: %s\n== gen: %d\n==niche: %d\n", conn->channel, strcmp(conn->channel, CHANL_GEN), strcmp(conn->channel, CHANL_NICHE));
     fflush(stdout);
   }
 

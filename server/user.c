@@ -84,6 +84,8 @@ struct user *get_user(struct user *list, const int fd, const char *uname) {
     if( strcmp(it->uname, uname) == 0 ) {
       return it;
     }
+    it = it->next;
+  }
 
   it = list;
   while( it != NULL && uname == NULL ) { // search by fd
@@ -91,8 +93,6 @@ struct user *get_user(struct user *list, const int fd, const char *uname) {
       return it;
     }
 
-    it = it->next;
-  }
     it = it->next;
   }
 
@@ -134,15 +134,25 @@ int get_reqt(struct user *conn, char *from){
   return index == conn->reqs_len ? -1 : index;
 }
 
-void update_buffers(struct user *connList, struct user *from, char *message[], const int len) {
+void update_buffers(struct user *connList, struct user *from, char *message[], const int argc) {
   char *channel = from->channel;
+  *message = mergeStrings(2, *message, "\n");
+
   while(connList){
     if(connList->out_len == MAX_OUT) connList = connList->next;
     if(strcmp(connList->channel, channel) != 0) connList = connList->next;
-    connList->outbuffer = mergeStrings(len + 3, from->uname, ":\n\t", message, time_now());
+    if(connList->outbuffer != NULL) connList->outbuffer = mergeStrings(3, connList->outbuffer, "\n", from->uname);
+    else{
+      connList->outbuffer = malloc(strlen(from->uname) * sizeof(char) + 1);
+      connList->outbuffer = strcpy(connList->outbuffer, from->uname);
+    }
+    
+    connList->outbuffer = mergeStrings(4, connList->outbuffer, ":\n\t", *message, time_now());
+    
     connList->out_len++;
     connList = connList->next;
   }
+  free(*message);
 }
 
 // int write_clients(struct user *conn) {
