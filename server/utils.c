@@ -41,3 +41,10 @@ char *mergeStrings(int argc, ...) {
   return fullMessage;
 }
 
+char *time_now(){
+  FILE *fp = popen("date +%T", "r");
+  char *time = (char*)malloc(sizeof(char) * 9);
+  fgets(time, 9, fp);
+
+  return time;
+}
