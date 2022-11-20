@@ -136,6 +136,10 @@ int get_reqt(struct user *conn, char *from){
 
 void update_buffers(struct user *connList, struct user *from, char *message[], const int argc) {
   char *channel = from->channel;
+  int message_i = 1;
+  while(message_i < argc) {
+    *message = mergeStrings(3, *message, ARGS_DELIM_STR, message[message_i++]);
+  }
   *message = mergeStrings(2, *message, "\n");
 
   while(connList){

@@ -18,6 +18,7 @@
 #include <unistd.h>
 
 #include "utils.h"
+#include "commands.h"
 
 struct user {
   char *uname;
