@@ -43,13 +43,14 @@ char *mergeStrings(int argc, ...) {
 
 char *time_now(){
   FILE *fp = popen("date +%T", "r");
-  char *time = (char*)malloc(sizeof(char) * 10);
-  fgets(time, 10, fp);
+  char *time = (char*)malloc(sizeof(char) * 11);
+  fgets(time, 11, fp);
   pclose(fp);
 
   // append a newline to the end of the time string
   time[8] = '\n';
-  time[9] = '\0';
+  time[9] = '\n';
+  // time[10] = '\0';
 
   return time;
 }

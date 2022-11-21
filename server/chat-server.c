@@ -24,12 +24,12 @@
 #define TEMP_PORT 57300
 
 int writeToFd(int fd, const char *message) {
+  if(strcmp(message, "") == 0) message = "\r";
   int len = strlen(message);
   int totalBytesWritten = 0;
 
   do {
     int bytesWritten = write(fd, message + totalBytesWritten, len - totalBytesWritten);
-    1;
     if( bytesWritten == -1 ) {
       perror("writeToFd|write");
       return -1;
@@ -124,12 +124,7 @@ struct user *processMessage(char *message, struct user *connList, int fd){
   //   connList = processHelp(tokenIndex, tokens, connList, fd);
   // else if(strcmp(command, CMD_REQS) == 0)
   //   connList = processRequests(tokenIndex, tokens, connList, fd);
-  else if( strcmp(command, CMD_NOOP) == 0 ){
-    // connList = processRefresh(tokenIndex, tokens, connList, fd);
-    conn->outbuffer = conn->outbuffer == NULL ? conn->outbuffer = mergeStrings(2, "", "") : conn->outbuffer;
-    // CMD_NOOP;
-
-  }
+  else if( strcmp(command, CMD_NOOP) == 0 ) conn->outbuffer = conn->outbuffer == NULL ? conn->outbuffer = mergeStrings(2, "", "") : conn->outbuffer;
   else if(strcmp(conn->channel, CHANL_GEN) == 0 || strcmp(conn->channel, CHANL_NICHE) == 0){
     update_buffers(connList, conn, tokens, tokenIndex);
   }
@@ -155,42 +150,49 @@ void usage(int argc, char *argv[]) {
   printf("\tCtrl + C to quit\n\n");
 
   printf("Supports the following commands:\n");
-  printf("\t%s uniqueKey\n", CMD_HELLO);
-  printf("\t\ton success: sends '%s uniqueKey\\n' through socket\n", CMD_HELLO);
+  printf("\t%s <username>\n", CMD_HELLO);
+  printf("\t\ton success: sends '%s <username>' through socket\n", CMD_HELLO);
   printf("\t\ton failure: sends error: message through socket\n");
   printf("\t\texample:\n");
   printf("\t\t  %s bob\n\n", CMD_HELLO);
+
   printf("\t%s <channel-name>\n", CMD_CHANNEL);
   printf("\t\ton success: sends 'Now in channel: <channel-name>' from the system through socket\n");
   printf("\t\ton failure: sends error: message 'Channel <channel-name> does not exist' through socket\n");
   printf("\t\texamples:\n");
-  printf("\t\t  %s general\n", CMD_CHANNEL);
-  printf("\t\t  %s niche\n" CMD_CHANNEL);
+  printf("\t\t  %s %s\n", CMD_CHANNEL, CHANL_GEN);
+  printf("\t\t  %s %s\n\n", CMD_CHANNEL, CHANL_NICHE);
+
   printf("\t%s <username>\n", CMD_DM);
-  printf("\t\ton success: sens a message request to <username>\n");
+  printf("\t\ton success: sends a message request to <username>\n");
   printf("\t\ton failure: sends error: message through socket\n");
   printf("\t\texamples:\n");
   printf("\t\t  %s bob\n", CMD_DM);
-  printf("\t\t  %s ana\n", CMD_DM);
+  printf("\t\t  %s ana\n\n", CMD_DM);
+
   printf("\t%s\n", CMD_REQS);
   printf("\t\ton success: list the user's inbound messsage requests\n");
-  printf("\t\ton failure: sends error: message through socket\n");
+  printf("\t\ton failure: sends error: message through socket\n\n");
+
   printf("\t%s<command>\n", CMD_ESC);
   printf("\t\ton success: allows one to send a command (except for empty string) as a standard message.\n");
   printf("\t\ton failure: sends error: message through socket\n");
   printf("\t\texamples:\n");
   printf("\t\t  %s%s bob is how you'd DM bob\n", CMD_ESC, CMD_DM);
-  printf("\t\t  %s%s is the requests command\n", CMD_ESC, CMD_REQS);
+  printf("\t\t  %s%s is the requests command\n\n", CMD_ESC, CMD_REQS);
+
   printf("\t%s\n", CMD_HELP);
   printf("\t\ton success: sends this message\n");
-  printf("\t\ton failure: also sends this message with error message\n");
+  printf("\t\ton failure: also sends this message with error message\n\n");
+
   printf("\t''\n");
   printf("\t\tcommand is empty string, and refreshes the client to recieve messages.\n");
   printf("\t\ton success: sends pending messages to the client\n");
-  printf("\t\ton failure: sends error: message through socket\n");
+  printf("\t\ton failure: sends error: message through socket\n\n");
+
   printf("\t%s\n", CMD_EXIT);
   printf("\t\tnote: this will close an open connection opened with a %s command\n", CMD_HELLO);
-  printf("\t\ton success: sends 'GOODBYE [username]\\n' through socket\n");
+  printf("\t\ton success: sends 'GOODBYE [username]' through socket\n");
   printf("\t\ton failure: sends error: message through socket\n");
 }
 
@@ -205,6 +207,7 @@ int main(int argc, char *argv[]){
   // }
   // setup socket and signal handlers
   // bind socket to port
+  usage(argc, argv);
   struct sockaddr_in address;
   struct in_addr ipAddress;
 
