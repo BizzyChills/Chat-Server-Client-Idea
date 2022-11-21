@@ -29,11 +29,14 @@ struct user *conn_create(const char *uname, int fd) {
   newConn->channel = malloc(strlen(CHANL_GEN)); // current channel. default is general
   newConn->channel = strcpy(newConn->channel, CHANL_GEN);
   newConn->reqs_len = 0; // length of the request list
-  asprintf(&newConn->outbuffer, "System:\n\tHello %s! Welcome to the server!\n%s\n", uname, time_now());
+  asprintf(&newConn->outbuffer, "%sHello %s! Welcome to the server!\n%s", SYS_MSG, uname, time_now());
+  char *sys_msg = mergeStrings(5, SYS_MSG, "Now in channel: ", CHANL_GEN, "\n", time_now());
+  newConn->outbuffer = mergeStrings(2, newConn->outbuffer, sys_msg);
   newConn->out_len = 1; // number of messages stored in outbuffer, not the size of the buffer
   newConn->next = NULL;
   newConn->prev = NULL;
 
+  free(sys_msg);
   return newConn;
 }
 
@@ -137,9 +140,9 @@ int get_reqt(struct user *conn, char *from){
 void update_buffers(struct user *connList, struct user *from, char *message[], const int argc) {
   char *channel = from->channel;
   int message_i = 1;
-  while(message_i < argc) {
+  while(message_i < argc)
     *message = mergeStrings(3, *message, ARGS_DELIM_STR, message[message_i++]);
-  }
+
   *message = mergeStrings(2, *message, "\n");
 
   while(connList){
@@ -151,7 +154,7 @@ void update_buffers(struct user *connList, struct user *from, char *message[], c
       connList->outbuffer = strcpy(connList->outbuffer, from->uname);
     }
     
-    connList->outbuffer = mergeStrings(4, connList->outbuffer, ":\n\t", *message, time_now());
+    connList->outbuffer = mergeStrings(4, connList->outbuffer, ":\n    ", *message, time_now());
     
     connList->out_len++;
     connList = connList->next;

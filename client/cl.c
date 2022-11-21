@@ -39,6 +39,8 @@ int main() {
         // createRandomMsg(randomMsg, RANDOM_MSG_LENGTH);
         printf("send: ");
         fgets(command, BUFSIZ - 1, stdin);
+        printf("\n");
+        fflush(stdout);
         if(command)
             send(serverFd, command, strlen(command), 0);
 

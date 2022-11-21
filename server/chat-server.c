@@ -83,7 +83,7 @@ struct user *processExit(int argc, char *argv[], struct user *connList, int fd) 
 
 
 struct user *processMessage(char *message, struct user *connList, int fd){
-  char *tokens[MAX_N_TOKENS] = {"NOOP"};
+  char *tokens[MAX_N_TOKENS] = {CMD_NOOP};
   int tokenIndex = 0;
 
   char *messageCopy = malloc(strlen(message) * sizeof(char) + 1);
@@ -104,6 +104,16 @@ struct user *processMessage(char *message, struct user *connList, int fd){
 
   char *command = tokens[0];
 
+  if(strcmp(command, CMD_HELLO) == 0 )
+    return processHello(tokenIndex, tokens, connList, fd);
+
+  struct user *conn = get_user(connList, fd, NULL);
+  if( conn == NULL ) {
+    char *err = "error: You must say HELLO before sending messages\n";
+    writeToFd(fd, err);
+    return connList;
+  }
+
   if( strcmp(command, CMD_EXIT) == 0 ) 
     connList = processExit(tokenIndex, tokens, connList, fd);
   // else if(strcmp(command, CMD_CHANNEL) == 0)
@@ -114,20 +124,17 @@ struct user *processMessage(char *message, struct user *connList, int fd){
   //   connList = processHelp(tokenIndex, tokens, connList, fd);
   // else if(strcmp(command, CMD_REQS) == 0)
   //   connList = processRequests(tokenIndex, tokens, connList, fd);
-  else if(strcmp(command, CMD_HELLO) == 0 ) 
-    connList = processHello(tokenIndex, tokens, connList, fd);
-  else{
-    struct user *conn = get_user(connList, fd, NULL);
-    if(conn == NULL){
-    char *ret = "error: expected HELLO [uname].\n";
-    writeToFd(fd, ret);
-    } 
-    else if(strcmp(conn->channel, CHANL_GEN) == 0 || strcmp(conn->channel, CHANL_NICHE) == 0){
-      update_buffers(connList, conn, tokens, tokenIndex);
-    }
-    printf("channel in: %s\n== gen: %d\n==niche: %d\n", conn->channel, strcmp(conn->channel, CHANL_GEN), strcmp(conn->channel, CHANL_NICHE));
-    fflush(stdout);
+  else if( strcmp(command, CMD_NOOP) == 0 ){
+    // connList = processRefresh(tokenIndex, tokens, connList, fd);
+    conn->outbuffer = conn->outbuffer == NULL ? conn->outbuffer = mergeStrings(2, "", "") : conn->outbuffer;
+    // CMD_NOOP;
+
   }
+  else if(strcmp(conn->channel, CHANL_GEN) == 0 || strcmp(conn->channel, CHANL_NICHE) == 0){
+    update_buffers(connList, conn, tokens, tokenIndex);
+  }
+  // printf("channel in: %s\n== gen: %d\n==niche: %d\n", conn->channel, strcmp(conn->channel, CHANL_GEN), strcmp(conn->channel, CHANL_NICHE));
+  // fflush(stdout);
 
   free(messageCopy);
 
@@ -148,31 +155,43 @@ void usage(int argc, char *argv[]) {
   printf("\tCtrl + C to quit\n\n");
 
   printf("Supports the following commands:\n");
-  printf("\tHELLO uniqueKey\n");
-  printf("\t\ton success: sends 'HELLO uniqueKey\\n' through socket\n");
+  printf("\t%s uniqueKey\n", CMD_HELLO);
+  printf("\t\ton success: sends '%s uniqueKey\\n' through socket\n", CMD_HELLO);
   printf("\t\ton failure: sends error: message through socket\n");
   printf("\t\texample:\n");
-  printf("\t\t  HELLO bob\n\n");
-  printf("\tSUM [variable-name] number1 [number2 number3 ... numberN]\n");
-  printf("\t\ton success: sends '[variable-name] [=] <computedSum>\\n' through socket\n");
-  printf("\t\t            if variable-name is present, stores value on a per-client basis.\n");
+  printf("\t\t  %s bob\n\n", CMD_HELLO);
+  printf("\t%s <channel-name>\n", CMD_CHANNEL);
+  printf("\t\ton success: sends 'Now in channel: <channel-name>' from the system through socket\n");
+  printf("\t\ton failure: sends error: message 'Channel <channel-name> does not exist' through socket\n");
+  printf("\t\texamples:\n");
+  printf("\t\t  %s general\n", CMD_CHANNEL);
+  printf("\t\t  %s niche\n" CMD_CHANNEL);
+  printf("\t%s <username>\n", CMD_DM);
+  printf("\t\ton success: sens a message request to <username>\n");
   printf("\t\ton failure: sends error: message through socket\n");
   printf("\t\texamples:\n");
-  printf("\t\t  SUM one 1\n");
-  printf("\t\t  SUM one+two 1 2\n");
-  printf("\t\t  SUM 9 7 999 -14\n\n");
-  printf("\tSTORED-VALUE variable-name\n");
-  printf("\t\ton success: sends '[variable-name] [=] <stored-sum>\\n' through socket\n");
+  printf("\t\t  %s bob\n", CMD_DM);
+  printf("\t\t  %s ana\n", CMD_DM);
+  printf("\t%s\n", CMD_REQS);
+  printf("\t\ton success: list the user's inbound messsage requests\n");
+  printf("\t\ton failure: sends error: message through socket\n");
+  printf("\t%s<command>\n", CMD_ESC);
+  printf("\t\ton success: allows one to send a command (except for empty string) as a standard message.\n");
   printf("\t\ton failure: sends error: message through socket\n");
   printf("\t\texamples:\n");
-  printf("\t\t  STORED-VALUE one\n");
-  printf("\t\t  STORED-VALUE one+two\n");
-  printf("\tGOODBYE\n");
-  printf("\t\tnote: this will close an open connection opened with a HELLO command\n");
-  printf("\t\ton success: sends 'GOODBYE uniqueKey\\n' through socket\n");
+  printf("\t\t  %s%s bob is how you'd DM bob\n", CMD_ESC, CMD_DM);
+  printf("\t\t  %s%s is the requests command\n", CMD_ESC, CMD_REQS);
+  printf("\t%s\n", CMD_HELP);
+  printf("\t\ton success: sends this message\n");
+  printf("\t\ton failure: also sends this message with error message\n");
+  printf("\t''\n");
+  printf("\t\tcommand is empty string, and refreshes the client to recieve messages.\n");
+  printf("\t\ton success: sends pending messages to the client\n");
   printf("\t\ton failure: sends error: message through socket\n");
-  printf("\t\texample:\n");
-  printf("\t\t  GOODBYE\n");
+  printf("\t%s\n", CMD_EXIT);
+  printf("\t\tnote: this will close an open connection opened with a %s command\n", CMD_HELLO);
+  printf("\t\ton success: sends 'GOODBYE [username]\\n' through socket\n");
+  printf("\t\ton failure: sends error: message through socket\n");
 }
 
 /// very good setup. It looks like everything works!  It looks like you included
