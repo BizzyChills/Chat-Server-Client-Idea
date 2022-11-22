@@ -12,6 +12,7 @@
 #include <poll.h>
 #include <sys/resource.h>
 #include <ctype.h>
+#include <math.h>
 
 #include "commands.h"
 #include "user.h"
@@ -20,11 +21,19 @@
 #define BUFFER_SIZE 4096
 #define MAX_N_TOKENS 10
 #define MAX_CONNECTIONS 1024
-#define RANDOM_MSG_LENGTH 8
+#define RANK_SYS 0
+#define RANK_PRIV 1 // priorities for output messages
+#define RANK_PUB 2
+#define SYS_MSG "System:\n\t"
 #define TEMP_PORT 57300
 
 int writeToFd(int fd, const char *message) {
   if(strcmp(message, "") == 0) message = "\r";
+  // append a null to message
+  // char *msg = malloc(strlen(message) + 1);
+  // strcpy(msg, message);
+  // msg[strlen(message)] = 0;
+  // int len = strlen(message) + 1;
   int len = strlen(message);
   int totalBytesWritten = 0;
 
@@ -32,12 +41,16 @@ int writeToFd(int fd, const char *message) {
     int bytesWritten = write(fd, message + totalBytesWritten, len - totalBytesWritten);
     if( bytesWritten == -1 ) {
       perror("writeToFd|write");
+      // free(msg);
       return -1;
     }
 
     totalBytesWritten += bytesWritten;
+    // printf("bytes written: %d\n", totalBytesWritten);
+    // fflush(stdout);
   } while(totalBytesWritten < len);
 
+  // free(msg);
   return 0;
 }
 
@@ -72,9 +85,10 @@ struct user *processExit(int argc, char *argv[], struct user *connList, int fd) 
     writeToFd(fd, ret);
     return connList;
   }
-  
-  conn->outbuffer = mergeStrings(6, SYS_MSG, "Goodbye ", conn->uname, "\n", time_now(), "\n");
-  conn->out_len++;
+  empty_buffer(conn);
+  conn->outbuffer[0] = mergeStrings(6, SYS_MSG, "Goodbye ", conn->uname, "\n", time_now(), "\n");
+  conn->out_rank[0] = RANK_SYS;
+  conn->out_len = 1;
 
   // connList = conn_remove(&connList, conn); // don't remove from list until we've written to the client
 
@@ -124,7 +138,11 @@ struct user *processMessage(char *message, struct user *connList, int fd){
   //   connList = processHelp(tokenIndex, tokens, connList, fd);
   // else if(strcmp(command, CMD_REQS) == 0)
   //   connList = processRequests(tokenIndex, tokens, connList, fd);
-  else if( strcmp(command, CMD_NOOP) == 0 ) conn->outbuffer = conn->outbuffer == NULL ? conn->outbuffer = mergeStrings(2, "", "") : conn->outbuffer;
+  else if( strcmp(command, CMD_NOOP) == 0 ){
+    conn->outbuffer[0] = conn->outbuffer[0] == NULL ? mergeStrings(2, "", "") : conn->outbuffer[0];
+    conn->out_rank[0] = RANK_PUB;
+    conn->out_len = 1;
+  }
   else if(strcmp(conn->channel, CHANL_GEN) == 0 || strcmp(conn->channel, CHANL_NICHE) == 0){
     update_buffers(connList, conn, tokens, tokenIndex);
   }
@@ -290,10 +308,10 @@ int main(int argc, char *argv[]){
             /// thing to watch out for here is to make sure you read all data -aaron
             else if( bytesRead > 0) { // successfully read some data, process command
               char *temp_buf = malloc(BUFSIZ);
-              poll(clientFds, numberClients, 0);
+              poll(&clientFds[currFd], 1, 0);
               while(clientFds[currFd].revents & POLLIN && read(clientFds[currFd].fd, temp_buf, BUFSIZ) > 0) {
                 temp_buf = mergeStrings(2, &buffer, temp_buf);
-                poll(clientFds, numberClients, 0);
+                poll(&clientFds[currFd], 1, 0);
               }
               clients = processMessage(buffer, clients, clientFds[currFd].fd);
               clientFds[currFd].events |= POLLOUT;
@@ -308,15 +326,28 @@ int main(int argc, char *argv[]){
             }
           }
           if(clientFds[currFd].revents & POLLOUT ) { // write to socket if nonblocking
+            clients = pack_buffers(clients);
             for(int i = 0; i < numberClients; i++){
               struct user *curr_user;
-              if(clientFds[i].revents & POLLOUT && (curr_user = get_user(clients, clientFds[i].fd, NULL)) && curr_user->outbuffer != NULL){
-                writeToFd(clientFds[i].fd, curr_user->outbuffer);
-                curr_user->outbuffer = NULL;
-                curr_user->out_len = 0;
+              if(clientFds[i].revents & POLLOUT && (curr_user = get_user(clients, clientFds[i].fd, NULL)) && curr_user->outbuffer[0] != NULL){
+                int b_sent = strlen(curr_user->outbuffer[0]);
+
+                char *len = malloc((int)(ceil(log10(b_sent))+1));
+                if(len == NULL){
+                  writeToFd(clientFds[i].fd, "1"); // if empty buffer, send 1 byte. assign like this so free doesn't break
+                } 
+                else{
+                  sprintf(len, "%d", b_sent);
+                  writeToFd(clientFds[i].fd, len);
+                  free(len);
+                } 
+                useconds_t s = 2000;
+                usleep(s);
+                
+                writeToFd(clientFds[i].fd, curr_user->outbuffer[0]);
+                curr_user = remove_buffer(curr_user, 0);
                 // clientFds[i].events &= ~POLLOUT;
                 clientFds[i].events = POLLIN;
-                poll(clientFds, numberClients, 0);
               }
             }
             // struct user *currClient = get_user(clients, clientFds[currFd].fd);

@@ -9,7 +9,11 @@
 #define MAX_OUT 10 // Maximum number of output messages queued. prioritize all system messages, then all private messages, then public messages
 #define CHANL_GEN "general"
 #define CHANL_NICHE "niche"
+#define RANK_SYS 0
+#define RANK_PRIV 1 // priorities for output messages
+#define RANK_PUB 2
 #define SYS_MSG "System:\n\t"
+
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,7 +31,8 @@ struct user {
   char *req_from[MAX_PRIV];
   char *reqs[MAX_PRIV];
   int reqs_len;
-  char *outbuffer;
+  char *outbuffer[MAX_OUT];
+  int out_rank[MAX_OUT]; // 0 = sys, 1 = priv, 2 = pub
   int out_len;
   struct user *next;
   struct user *prev;
@@ -38,9 +43,12 @@ struct user *conn_create(const char *uname, int fd);
 struct user *get_user(struct user *list, const int fd, const char *uname);
 struct user *conn_insert(struct user **list, struct user *newConnection);
 struct user *conn_remove(struct user **list, struct user *toRemove);
+struct user *remove_buffer(struct user *conn, int index); // remove a message from a single client's output buffer
+struct user *empty_buffer(struct user *conn); // remove all messages from a single client's output buffer
+struct user *pack_buffers(struct user *connList); // pack all messages from all clients into a single buffer
 // void conn_fprint(FILE* file, struct user *list);
-int conn_var_index(struct user *conn, char *from);
-void update_buffers(struct user *conn, struct user *from, char *message[], const int len);
+void update_buffers(struct user *conn, struct user *from, char *message[], const int len); // update all client's buffers
+int lowest_rank_i(struct user *conn); // get the index of the lowest rank message in the output buffer
 // int write_clients(struct user *conn);
 
 #endif
