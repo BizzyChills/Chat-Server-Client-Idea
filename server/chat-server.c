@@ -272,7 +272,8 @@ void usage(int argc, char *argv[]) {
   printf("\t\texample:\n");
   printf("\t\t  %s bob\n\n", CMD_HELLO);
 
-  printf("\t%s <channel-name>\n", CMD_CHANNEL);
+  printf("\t%s [channel-name]\n", CMD_CHANNEL);
+  printf("\t\t if no channel name is given, prints the current channel. Otherwise, switches user to specified channel.\n");
   printf("\t\ton success: sends 'Now in channel: <channel-name>' from the system through socket\n");
   printf("\t\ton failure: sends error: message 'Channel <channel-name> does not exist' through socket\n");
   printf("\t\texamples:\n");
