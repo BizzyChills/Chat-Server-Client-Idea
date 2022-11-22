@@ -54,3 +54,10 @@ char *time_now(){
 
   return time;
 }
+
+char *itoa(int num){
+  // turn an integer into a malloced string
+  char *str = (char*)malloc(sizeof(char) * 12);
+  sprintf(str, "%d", num);
+  return str;
+}

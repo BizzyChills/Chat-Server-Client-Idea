@@ -22,7 +22,7 @@ void getInput(char *input) {
     printf("\n| send: ");
     fgets(input, BUFSIZ - 1, stdin);
     for(int i = 0; i < w.ws_col; i++) printf("-");
-    printf("\n");
+    printf("\n\n");
     fflush(stdout);
 }
 

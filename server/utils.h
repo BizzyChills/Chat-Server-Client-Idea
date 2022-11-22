@@ -9,5 +9,6 @@
 
 char *mergeStrings(int argc, ...);
 char *time_now();
+char *itoa(int num);
 
 #endif

@@ -47,8 +47,10 @@ struct user *remove_buffer(struct user *conn, int index); // remove a message fr
 struct user *empty_buffer(struct user *conn); // remove all messages from a single client's output buffer
 struct user *pack_buffers(struct user *connList); // pack all messages from all clients into a single buffer
 // void conn_fprint(FILE* file, struct user *list);
+int get_reqt(struct user *conn, char *from);
+int get_rank_i(struct user *conn); // get the index of the lowest rank message in the output buffer
 void update_buffers(struct user *conn, struct user *from, char *message[], const int len); // update all client's buffers
-int lowest_rank_i(struct user *conn); // get the index of the lowest rank message in the output buffer
+void *insert_buffer(struct user *conn, char *message, const int rank); // insert a message into a single client's output buffer
 // int write_clients(struct user *conn);
 
 #endif

@@ -1,5 +1,5 @@
 #define _XOPEN_SOURCE 700 // allows use of sigaction
-#include <stdio.h>
+#define _GNU_SOURCE
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <string.h>
@@ -13,6 +13,7 @@
 #include <sys/resource.h>
 #include <ctype.h>
 #include <math.h>
+#include <stdio.h>
 
 #include "commands.h"
 #include "user.h"
@@ -26,19 +27,20 @@
 #define RANK_PUB 2
 #define SYS_MSG "System:\n\t"
 #define TEMP_PORT 57300
+#define RESERVED_LEN 11 // number of reserved unames
+
+char *reserved_unames[RESERVED_LEN] = {"system", "server", "admin", "admins", "root", "administrator", "administrators", "moderator", "moderators", "mod", "mods"};
 
 int writeToFd(int fd, const char *message) {
   if(strcmp(message, "") == 0) message = "\r";
-  // append a null to message
-  // char *msg = malloc(strlen(message) + 1);
-  // strcpy(msg, message);
-  // msg[strlen(message)] = 0;
-  // int len = strlen(message) + 1;
-  int len = strlen(message);
-  int totalBytesWritten = 0;
 
+  int len = strlen(message);
+  char *len_str = itoa(len);
+  
+  int totalBytesWritten = 0;
+ // write length of message to fd
   do {
-    int bytesWritten = write(fd, message + totalBytesWritten, len - totalBytesWritten);
+    int bytesWritten = write(fd, len_str + totalBytesWritten, strlen(len_str) - totalBytesWritten);
     if( bytesWritten == -1 ) {
       perror("writeToFd|write");
       // free(msg);
@@ -48,9 +50,24 @@ int writeToFd(int fd, const char *message) {
     totalBytesWritten += bytesWritten;
     // printf("bytes written: %d\n", totalBytesWritten);
     // fflush(stdout);
+  } while(totalBytesWritten < strlen(len_str));
+
+  useconds_t s = 2000; // give the client time to read the length
+  usleep(s);
+  free(len_str);
+
+  totalBytesWritten = 0;
+
+  do {
+    int bytesWritten = write(fd, message + totalBytesWritten, len - totalBytesWritten);
+    if( bytesWritten == -1 ) {
+      perror("writeToFd|write");
+      return -1;
+    }
+
+    totalBytesWritten += bytesWritten;
   } while(totalBytesWritten < len);
 
-  // free(msg);
   return 0;
 }
 
@@ -59,14 +76,46 @@ struct user *processHello(int argc, char *argv[], struct user *connList, int fd)
   struct user *conn;
   char *username = argv[1];
 
-  if( (conn = get_user(connList, fd, argv[1])) != NULL ) { // if you have said hello before
+  if( (conn = get_user(connList, fd, NULL)) != NULL ) { // if you have said hello before
+    update_buffers(connList, conn, argv, argc);
     return connList;
   }
 
-  if( argc != 2 ) {
+  if( argc != 2) {
     char *err = "error: expected 'HELLO [uname]'\n";
     writeToFd(fd, err); // write error to client, can't add to outbuffer because we don't have a connection yet
     return connList;
+  }
+
+  if( strlen(username) > MAX_UNAME || strlen(username) < MIN_UNAME ) {
+    char *err;
+    asprintf(&err, "error: username must be between %d and %d characters\n", MIN_UNAME, MAX_UNAME);
+    writeToFd(fd, err); // write error to client, can't add to outbuffer because we don't have a connection yet
+    free(err);
+    return connList;
+  }
+
+  if( get_user(connList, -1, username) != NULL ) {
+    char *err;
+    asprintf(&err, "error: username '%s' is already taken\n", username);
+    writeToFd(fd, err); // write error to client, can't add to outbuffer because we don't have a connection yet
+    free(err);
+    return connList;
+  }
+  char *tmp_uname = malloc(strlen(username) + 1);
+  strcpy(tmp_uname, username);
+  // convert tmp_uname to lowercase
+  for(int i = 0; i < strlen(tmp_uname); i++) tmp_uname[i] = tolower(tmp_uname[i]);
+
+  for(int i = 0; i < RESERVED_LEN; i++) {
+    if( strcmp(tmp_uname, reserved_unames[i]) == 0 ) {
+      char *err;
+      asprintf(&err, "error: username '%s' is reserved\n", username);
+      writeToFd(fd, err); // write error to client, can't add to outbuffer because we don't have a connection yet
+      free(err);
+      free(tmp_uname);
+      return connList;
+    }
   }
 
   struct user *newConn = conn_create(username, fd);
@@ -95,6 +144,55 @@ struct user *processExit(int argc, char *argv[], struct user *connList, int fd) 
   return connList;
 }
 
+void processChannel(int argc, char *argv[], struct user *connList, int fd){
+  struct user *conn = get_user(connList, fd, NULL);
+
+  if(conn == NULL){
+    char *err;
+    asprintf(&err, "error: you must say %s before you can join a channel\n", CMD_HELLO);
+    writeToFd(fd, err);
+    free(err);
+    return;
+  }
+
+  if (argc < 2) {
+    // char *err = malloc(strlen("error: expected '> <channel>'\n") + 1);
+    // strcpy(err, "error: expected '> <channel>'\n");
+    // insert_buffer(conn, err, RANK_SYS);
+    // free(err);
+    insert_buffer(conn, mergeStrings(6, SYS_MSG, "Currently in channel ", CHANL_GEN, "\n", time_now(), "\n"), RANK_SYS);
+    return;
+  }
+  char *channel = argv[1];
+
+  if (strcmp(channel, CHANL_GEN) == 0){ // switching to general
+    if (strcmp(conn->channel, CHANL_GEN) == 0){ // already in general
+      char *err;
+      asprintf(&err, "error: already in channel '%s'\n", CHANL_GEN);
+      insert_buffer(conn, err, RANK_SYS);
+      free(err);
+      return;
+    }
+    else{
+      conn->channel = CHANL_GEN;
+      insert_buffer(conn, mergeStrings(6, SYS_MSG, "Now in channel ", CHANL_GEN, "\n", time_now(), "\n"), RANK_SYS);
+    }
+  }
+
+  if (strcmp(channel, CHANL_NICHE) == 0){ // switching to general
+    if (strcmp(conn->channel, CHANL_NICHE) == 0){ // already in general
+      char *err;
+      asprintf(&err, "error: already in channel '%s'\n", CHANL_NICHE);
+      insert_buffer(conn, err, RANK_SYS);
+      free(err);
+      return;
+    }
+    else{
+      conn->channel = CHANL_NICHE;
+      insert_buffer(conn, mergeStrings(6, SYS_MSG, "Now in channel ", CHANL_NICHE, "\n", time_now(), "\n"), RANK_SYS);
+    }
+  }
+}
 
 struct user *processMessage(char *message, struct user *connList, int fd){
   char *tokens[MAX_N_TOKENS] = {CMD_NOOP};
@@ -130,8 +228,8 @@ struct user *processMessage(char *message, struct user *connList, int fd){
 
   if( strcmp(command, CMD_EXIT) == 0 ) 
     connList = processExit(tokenIndex, tokens, connList, fd);
-  // else if(strcmp(command, CMD_CHANNEL) == 0)
-  //   connList = processChannel(tokenIndex, tokens, connList, fd);
+  else if(strcmp(command, CMD_CHANNEL) == 0)
+    processChannel(tokenIndex, tokens, conn, fd);
   // else if(strcmp(command, CMD_DM) == 0)
   //   connList = processDM(tokenIndex, tokens, connList, fd);
   // else if(strcmp(command, CMD_HELP) == 0)
@@ -154,6 +252,7 @@ struct user *processMessage(char *message, struct user *connList, int fd){
   return connList;
 }
 
+
 struct pollfd createPollFd(int fd, short events) {
     return (struct pollfd) {
         .fd = fd,
@@ -161,7 +260,6 @@ struct pollfd createPollFd(int fd, short events) {
         .revents = 0
     };
 }
-
 
 void usage(int argc, char *argv[]) {
   printf("usage: %s <port-number>\n", argv[0]);
@@ -333,16 +431,6 @@ int main(int argc, char *argv[]){
                 int b_sent = strlen(curr_user->outbuffer[0]);
 
                 char *len = malloc((int)(ceil(log10(b_sent))+1));
-                if(len == NULL){
-                  writeToFd(clientFds[i].fd, "1"); // if empty buffer, send 1 byte. assign like this so free doesn't break
-                } 
-                else{
-                  sprintf(len, "%d", b_sent);
-                  writeToFd(clientFds[i].fd, len);
-                  free(len);
-                } 
-                useconds_t s = 2000;
-                usleep(s);
                 
                 writeToFd(clientFds[i].fd, curr_user->outbuffer[0]);
                 curr_user = remove_buffer(curr_user, 0);
@@ -350,22 +438,6 @@ int main(int argc, char *argv[]){
                 clientFds[i].events = POLLIN;
               }
             }
-            // struct user *currClient = get_user(clients, clientFds[currFd].fd);
-            // if(currClient == NULL){
-            //   clientFds[currFd].events &= ~POLLOUT;
-            //   continue;
-            // }
-            // int bytesWritten = writeToFd(currClient->fd, currClient->outbuffer);
-            // if (bytesWritten == -1) {
-            //   perror("write");
-            // }
-            // while (bytesWritten > 0) {
-            //   bytesWritten = writeToFd(currClient->fd, currClient->outbuffer);
-            //   currClient->outbuffer = &currClient->outbuffer[bytesWritten];
-            // }
-            // // clientFds[currFd].events = POLLIN;
-            // clientFds[currFd].events |= POLLIN;
-            // currClient->outbuffer = NULL;
           }
         }
         currFd += 1;
