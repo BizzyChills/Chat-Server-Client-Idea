@@ -241,15 +241,15 @@ void usage(int argc, char *argv[]) {
   printf("\t\ton failure: sends error: message through socket\n\n");
 
   printf("\t%s<command>\n", CMD_ESC);
-  printf("\t\ton success: allows one to send a command (except for empty string) as a standard message.\n");
+  printf("\t\ton success: allows one to send a command as a standard message (or %s itself).\n", CMD_ESC);
   printf("\t\ton failure: sends error: message through socket\n");
   printf("\t\texamples:\n");
   printf("\t\t  %s%s bob is how you'd DM bob\n", CMD_ESC, CMD_DM);
   printf("\t\t  %s%s is the requests command\n\n", CMD_ESC, CMD_REQS);
 
   printf("\t%s\n", CMD_HELP);
-  printf("\t\ton success: sends this message\n");
-  printf("\t\ton failure: also sends this message with error message\n\n");
+  printf("\t\ton success: sends a simplified version of this message\n");
+  printf("\t\ton failure: also sends said message with error message\n\n");
 
   printf("\t''\n");
   printf("\t\tcommand is empty string, and refreshes the client to recieve messages.\n");
