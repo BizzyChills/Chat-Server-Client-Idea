@@ -91,12 +91,11 @@ int main(int argc, char *argv[]) {
         // printf("%d bytes read\n", bytesRead);
         printf("%s", response);
         
+        if (strcmp(command, ">EXIT\n") == 0) break;
+
         free(command);
         free(response);
         free(response_len);
-
-        if (strcmp(command, ">EXIT\n") == 0) break;
-        // else sleep(1);
     }
 
     close(serverFd);

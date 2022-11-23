@@ -172,6 +172,22 @@ struct user *pack_buffers(struct user *connList){
   return connList;
 }
 
+struct user *insert_buffer(struct user *conn, char *message, const int rank){
+  int len = conn->out_len;
+  if(len == MAX_OUT){ // if the buffer is full
+    int overw = get_rank_i(conn);
+    if(conn->out_rank[overw] == RANK_SYS && rank != RANK_SYS || (conn->out_rank[overw] == RANK_PRIV && rank == RANK_PUB)) return conn; // overwrite priority fail
+    
+    conn = remove_buffer(conn, overw);
+    len = len-1;
+  }
+  
+  conn->outbuffer[len] = message;
+  conn->out_rank[len] = rank;
+  conn->out_len = len == MAX_OUT ? MAX_OUT : len + 1;
+  return conn;
+}
+
 // void conn_fprint(FILE* file, struct user *list) {
 //   if( file == NULL ) {
 //     fprintf(stderr, "error: conn_fprint: null file\n");
@@ -251,21 +267,6 @@ void update_buffers(struct user *connList, struct user *from, char *message[], c
   }
 }
 
-void *insert_buffer(struct user *conn, char *message, const int rank){
-  int len = conn->out_len;
-  if(len == MAX_OUT){ // if the buffer is full
-    int overw = get_rank_i(conn);
-    if(conn->out_rank[overw] == RANK_SYS && rank != RANK_SYS || (conn->out_rank[overw] == RANK_PRIV && rank == RANK_PUB)) return conn; // overwrite priority fail
-    
-    conn = remove_buffer(conn, overw);
-    len = len-1;
-  }
-  
-  conn->outbuffer[len] = message;
-  conn->out_rank[len] = rank;
-  conn->out_len = len == MAX_OUT ? MAX_OUT : len + 1;
-  return conn;
-}
 
 
 // int write_clients(struct user *conn) {

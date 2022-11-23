@@ -29,7 +29,23 @@
 #define TEMP_PORT 57300
 #define RESERVED_LEN 11 // number of reserved unames
 
-char *reserved_unames[RESERVED_LEN] = {"system", "server", "admin", "admins", "root", "administrator", "administrators", "moderator", "moderators", "mod", "mods"};
+// global variables
+#define CMD_HELLO "HELLO"
+#define CMD_EXIT ">EXIT"
+#define CMD_CHANL ">"
+#define CMD_DM ">@"
+#define CMD_REQS ">!"
+#define CMD_HELP ">?"
+#define CMD_ESC "%"
+// #define CMD_REFRESH ">^"
+#define CMD_NOOP "NOOP"
+// #define CMD_ACCEPT "y"
+
+#define ARGS_DELIM_CHAR ' '
+#define ARGS_DELIM_STR  " "
+
+char *HELP_MSG;
+const char *reserved_unames[RESERVED_LEN] = {"system", "server", "admin", "admins", "root", "administrator", "administrators", "moderator", "moderators", "mod", "mods"};
 
 int writeToFd(int fd, const char *message) {
   if(strcmp(message, "") == 0) message = "\r";
@@ -43,7 +59,6 @@ int writeToFd(int fd, const char *message) {
     int bytesWritten = write(fd, len_str + totalBytesWritten, strlen(len_str) - totalBytesWritten);
     if( bytesWritten == -1 ) {
       perror("writeToFd|write");
-      // free(msg);
       return -1;
     }
 
@@ -54,7 +69,8 @@ int writeToFd(int fd, const char *message) {
 
   useconds_t s = 2000; // give the client time to read the length
   usleep(s);
-  free(len_str);
+  if(len_str)
+    free(len_str);
 
   totalBytesWritten = 0;
 
@@ -104,7 +120,8 @@ struct user *processHello(int argc, char *argv[], struct user *connList, int fd)
   }
   char *tmp_uname = malloc(strlen(username) + 1);
   strcpy(tmp_uname, username);
-  // convert tmp_uname to lowercase
+  
+  // convert tmp_uname to lowercase for reserved uname check
   for(int i = 0; i < strlen(tmp_uname); i++) tmp_uname[i] = tolower(tmp_uname[i]);
 
   for(int i = 0; i < RESERVED_LEN; i++) {
@@ -117,6 +134,9 @@ struct user *processHello(int argc, char *argv[], struct user *connList, int fd)
       return connList;
     }
   }
+
+  if(tmp_uname)
+    free(tmp_uname);
 
   struct user *newConn = conn_create(username, fd);
 
@@ -156,10 +176,6 @@ void processChannel(int argc, char *argv[], struct user *connList, int fd){
   }
 
   if (argc < 2) {
-    // char *err = malloc(strlen("error: expected '> <channel>'\n") + 1);
-    // strcpy(err, "error: expected '> <channel>'\n");
-    // insert_buffer(conn, err, RANK_SYS);
-    // free(err);
     insert_buffer(conn, mergeStrings(6, SYS_MSG, "Currently in channel ", CHANL_GEN, "\n", time_now(), "\n"), RANK_SYS);
     return;
   }
@@ -168,9 +184,8 @@ void processChannel(int argc, char *argv[], struct user *connList, int fd){
   if (strcmp(channel, CHANL_GEN) == 0){ // switching to general
     if (strcmp(conn->channel, CHANL_GEN) == 0){ // already in general
       char *err;
-      asprintf(&err, "error: already in channel '%s'\n", CHANL_GEN);
+      asprintf(&err, "error: already in channel '%s'\n", CHANL_GEN); // DONT FREE, freed after write
       insert_buffer(conn, err, RANK_SYS);
-      free(err);
       return;
     }
     else{
@@ -184,7 +199,6 @@ void processChannel(int argc, char *argv[], struct user *connList, int fd){
       char *err;
       asprintf(&err, "error: already in channel '%s'\n", CHANL_NICHE);
       insert_buffer(conn, err, RANK_SYS);
-      free(err);
       return;
     }
     else{
@@ -194,91 +208,26 @@ void processChannel(int argc, char *argv[], struct user *connList, int fd){
   }
 }
 
-struct user *processMessage(char *message, struct user *connList, int fd){
-  char *tokens[MAX_N_TOKENS] = {CMD_NOOP};
-  int tokenIndex = 0;
-
-  char *messageCopy = malloc(strlen(message) * sizeof(char) + 1);
-  messageCopy = strcpy(messageCopy, message);
-
-  char delims[3];
-  sprintf(delims, "%c\n", ARGS_DELIM_CHAR);
-
-  char *token = strtok(messageCopy, delims);
-
-  while( token != NULL ) {
-    tokens[tokenIndex++] = token;
-
-    token = strtok(NULL, delims);
-  }
-
-  // connList = processEscape(tokenIndex, tokens, connList, fd);
-
-  char *command = tokens[0];
-
-  if(strcmp(command, CMD_HELLO) == 0 )
-    return processHello(tokenIndex, tokens, connList, fd);
-
-  struct user *conn = get_user(connList, fd, NULL);
-  if( conn == NULL ) {
-    char *err = "error: You must say HELLO before sending messages\n";
-    writeToFd(fd, err);
-    return connList;
-  }
-
-  if( strcmp(command, CMD_EXIT) == 0 ) 
-    connList = processExit(tokenIndex, tokens, connList, fd);
-  else if(strcmp(command, CMD_CHANNEL) == 0)
-    processChannel(tokenIndex, tokens, conn, fd);
-  // else if(strcmp(command, CMD_DM) == 0)
-  //   connList = processDM(tokenIndex, tokens, connList, fd);
-  // else if(strcmp(command, CMD_HELP) == 0)
-  //   connList = processHelp(tokenIndex, tokens, connList, fd);
-  // else if(strcmp(command, CMD_REQS) == 0)
-  //   connList = processRequests(tokenIndex, tokens, connList, fd);
-  else if( strcmp(command, CMD_NOOP) == 0 ){
-    conn->outbuffer[0] = conn->outbuffer[0] == NULL ? mergeStrings(2, "", "") : conn->outbuffer[0];
-    conn->out_rank[0] = RANK_PUB;
-    conn->out_len = 1;
-  }
-  else if(strcmp(conn->channel, CHANL_GEN) == 0 || strcmp(conn->channel, CHANL_NICHE) == 0){
-    update_buffers(connList, conn, tokens, tokenIndex);
-  }
-  // printf("channel in: %s\n== gen: %d\n==niche: %d\n", conn->channel, strcmp(conn->channel, CHANL_GEN), strcmp(conn->channel, CHANL_NICHE));
-  // fflush(stdout);
-
-  free(messageCopy);
-
-  return connList;
-}
-
-
-struct pollfd createPollFd(int fd, short events) {
-    return (struct pollfd) {
-        .fd = fd,
-        .events = events,
-        .revents = 0
-    };
-}
-
 void usage(int argc, char *argv[]) {
-  printf("usage: %s <port-number>\n", argv[0]);
+  if(argc!=0) printf("usage: %s <port-number>\n", argv[0]);
+  
   printf("\tCtrl + C to quit\n\n");
 
   printf("Supports the following commands:\n");
+
   printf("\t%s <username>\n", CMD_HELLO);
   printf("\t\ton success: sends '%s <username>' through socket\n", CMD_HELLO);
   printf("\t\ton failure: sends error: message through socket\n");
   printf("\t\texample:\n");
   printf("\t\t  %s bob\n\n", CMD_HELLO);
 
-  printf("\t%s [channel-name]\n", CMD_CHANNEL);
+  printf("\t%s [channel-name]\n", CMD_CHANL);
   printf("\t\t if no channel name is given, prints the current channel. Otherwise, switches user to specified channel.\n");
   printf("\t\ton success: sends 'Now in channel: <channel-name>' from the system through socket\n");
   printf("\t\ton failure: sends error: message 'Channel <channel-name> does not exist' through socket\n");
   printf("\t\texamples:\n");
-  printf("\t\t  %s %s\n", CMD_CHANNEL, CHANL_GEN);
-  printf("\t\t  %s %s\n\n", CMD_CHANNEL, CHANL_NICHE);
+  printf("\t\t  %s %s\n", CMD_CHANL, CHANL_GEN);
+  printf("\t\t  %s %s\n\n", CMD_CHANL, CHANL_NICHE);
 
   printf("\t%s <username>\n", CMD_DM);
   printf("\t\ton success: sends a message request to <username>\n");
@@ -311,12 +260,97 @@ void usage(int argc, char *argv[]) {
   printf("\t\tnote: this will close an open connection opened with a %s command\n", CMD_HELLO);
   printf("\t\ton success: sends 'GOODBYE [username]' through socket\n");
   printf("\t\ton failure: sends error: message through socket\n");
+  
+
+
 }
 
-/// very good setup. It looks like everything works!  It looks like you included
-///   dynamic-buffer.[ch] as requirements, but they were not required from the build.
-///   Be sure to remove these from the Makefile and the header list of sum-server.c
-///   -aaron
+struct user *processMessage(char *message, struct user *connList, int fd){
+  char *tokens[MAX_N_TOKENS] = {CMD_NOOP};
+  int tokenIndex = 0;
+
+  char *messageCopy = malloc(strlen(message) * sizeof(char) + 1);
+  messageCopy = strcpy(messageCopy, message);
+
+
+  char delims[3];
+  sprintf(delims, "%c\n", ARGS_DELIM_CHAR);
+
+  char *token = strtok(messageCopy, delims);
+
+  while( token != NULL ) {
+    tokens[tokenIndex++] = token;
+
+    token = strtok(NULL, delims);
+  }
+
+
+  char *command = tokens[0];
+
+  if(strcmp(command, CMD_HELLO) == 0 )
+    return processHello(tokenIndex, tokens, connList, fd);
+
+  struct user *conn = get_user(connList, fd, NULL);
+
+  if( conn == NULL ) {
+    char *err = "error: You must say HELLO before accessing the server\n";
+    writeToFd(fd, err);
+    return connList;
+  }
+
+  
+  if( strcmp(command, CMD_NOOP) == 0 || (tokenIndex == 1 && strcmp(command, "%") == 0)){ // noop or single escape char
+    insert_buffer(conn, mergeStrings(2, "", ""), RANK_PUB);
+  }
+  
+  else if( strcmp(command, CMD_EXIT) == 0 )
+    return processExit(tokenIndex, tokens, connList, fd);
+
+  else if(strcmp(command, CMD_CHANL) == 0){
+    processChannel(tokenIndex, tokens, conn, fd);
+  }
+
+  // else if(strcmp(command, CMD_DM) == 0)
+  //   connList = processDM(tokenIndex, tokens, connList, fd);
+
+  // else if(strcmp(command, CMD_REQS) == 0)
+  //   connList = processRequests(tokenIndex, tokens, connList, fd);
+
+  else if(strcmp(command, CMD_HELP) == 0){
+    insert_buffer(conn, HELP_MSG, RANK_SYS);
+  }
+
+  else {
+    if(command[0] == *CMD_ESC){
+      tokens[0] = &command[1];
+      if(!tokens[0]){
+        // tokens[0] malloc(sizeof(char));
+        strcpy(tokens[0], "");
+      }
+    } 
+    
+    if(strcmp(conn->channel, CHANL_GEN) == 0 || strcmp(conn->channel, CHANL_NICHE) == 0){
+      update_buffers(connList, conn, tokens, tokenIndex);
+    }
+
+  }
+
+  if(messageCopy)
+    free(messageCopy);
+
+  return connList;
+}
+
+
+struct pollfd createPollFd(int fd, short events) {
+    return (struct pollfd) {
+        .fd = fd,
+        .events = events,
+        .revents = 0
+    };
+}
+
+
 int main(int argc, char *argv[]){
   // if (argc != 2) {
   //   usage(argc, argv);
@@ -324,7 +358,17 @@ int main(int argc, char *argv[]){
   // }
   // setup socket and signal handlers
   // bind socket to port
+  
   usage(argc, argv);
+
+  HELP_MSG = mergeStrings(11, 
+    "Commands:\n", 
+    CMD_HELLO, " <username> - create a new session\n", 
+    CMD_EXIT, " - end your session\n", 
+    CMD_CHANL, " <channel> - switch to a different channel ('general' or 'niche')\n", 
+    CMD_DM, " [username] - send a private message to the specified user.\n\t\t If no username specified, list all users in the current channel\n", 
+    CMD_HELP, " - display this help message\n\n");
+
   struct sockaddr_in address;
   struct in_addr ipAddress;
 
@@ -378,8 +422,7 @@ int main(int argc, char *argv[]){
       int currFd = 1;
 
       // process events on existing connections
-      while(numberFdsWithEvents > 0){
-        
+      while(numberFdsWithEvents > 0){  
         if (clientFds[currFd].revents != 0) {
           numberFdsWithEvents -= 1;
 
@@ -404,14 +447,17 @@ int main(int argc, char *argv[]){
             if( bytesRead == -1 ) { // couldn't read
               perror("read");
             }          
-            /// thing to watch out for here is to make sure you read all data -aaron
             else if( bytesRead > 0) { // successfully read some data, process command
               char *temp_buf = malloc(BUFSIZ);
+
               poll(&clientFds[currFd], 1, 0);
+
               while(clientFds[currFd].revents & POLLIN && read(clientFds[currFd].fd, temp_buf, BUFSIZ) > 0) {
                 temp_buf = mergeStrings(2, &buffer, temp_buf);
+
                 poll(&clientFds[currFd], 1, 0);
               }
+
               clients = processMessage(buffer, clients, clientFds[currFd].fd);
               clientFds[currFd].events |= POLLOUT;
             }
@@ -428,6 +474,7 @@ int main(int argc, char *argv[]){
             clients = pack_buffers(clients);
             for(int i = 0; i < numberClients; i++){
               struct user *curr_user;
+
               if(clientFds[i].revents & POLLOUT && (curr_user = get_user(clients, clientFds[i].fd, NULL)) && curr_user->outbuffer[0] != NULL){
                 int b_sent = strlen(curr_user->outbuffer[0]);
 
@@ -435,7 +482,7 @@ int main(int argc, char *argv[]){
                 
                 writeToFd(clientFds[i].fd, curr_user->outbuffer[0]);
                 curr_user = remove_buffer(curr_user, 0);
-                // clientFds[i].events &= ~POLLOUT;
+
                 clientFds[i].events = POLLIN;
               }
             }
@@ -446,7 +493,8 @@ int main(int argc, char *argv[]){
     }
 
     close(clientFds[0].fd);
-    free(clientFds);
+    if(clientFds)
+      free(clientFds);
 
     return 0;
 }
