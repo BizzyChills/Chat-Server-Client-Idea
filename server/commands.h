@@ -3,7 +3,7 @@
 #define CMD_EXIT ">EXIT"
 #define CMD_CHANNEL ">"
 #define CMD_DM ">@"
-#define CMD_REQS ">!"
+#define CMD_REQS_NOTIFY ">@ !"
 #define CMD_HELP ">?"
 #define CMD_ESC "%"
 // #define CMD_REFRESH ">^"

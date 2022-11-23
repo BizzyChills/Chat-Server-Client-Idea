@@ -25,7 +25,6 @@
 #define RANK_SYS 0
 #define RANK_PRIV 1 // priorities for output messages
 #define RANK_PUB 2
-#define SYS_MSG "System:\n\t"
 #define TEMP_PORT 57300
 #define RESERVED_LEN 11 // number of reserved unames
 
@@ -118,6 +117,7 @@ struct user *processHello(int argc, char *argv[], struct user *connList, int fd)
     free(err);
     return connList;
   }
+  
   char *tmp_uname = malloc(strlen(username) + 1);
   strcpy(tmp_uname, username);
   
@@ -132,6 +132,17 @@ struct user *processHello(int argc, char *argv[], struct user *connList, int fd)
       free(err);
       free(tmp_uname);
       return connList;
+    }
+    for(int x = 0; tmp_uname[x]; x++){
+      char n = tmp_uname[x];
+      if(('A' < n || n > 'Z') && ('a' > n || n > 'z') && ('0' > n || n > '9')){
+        char *err;
+        err = mergeStrings(2, "error: ", "username must be alphanumeric (American English) and cannot contain any whitespace\n");
+        writeToFd(fd, err); // write error to client, can't add to outbuffer because we don't have a connection yet
+        free(err);
+        free(tmp_uname);
+        return connList;
+      }
     }
   }
 
@@ -190,12 +201,13 @@ void processChannel(int argc, char *argv[], struct user *connList, int fd){
     }
     else{
       conn->channel = CHANL_GEN;
-      insert_buffer(conn, mergeStrings(6, SYS_MSG, "Now in channel ", CHANL_GEN, "\n", time_now(), "\n"), RANK_SYS);
+      remove_buffer_rank(conn, RANK_PUB); // remove previous channel's messages from buffer 
+      insert_buffer(conn, mergeStrings(5, SYS_MSG, "Now in channel ", CHANL_GEN, "\n", time_now()), RANK_SYS);
     }
   }
 
-  if (strcmp(channel, CHANL_NICHE) == 0){ // switching to general
-    if (strcmp(conn->channel, CHANL_NICHE) == 0){ // already in general
+  if (strcmp(channel, CHANL_NICHE) == 0){ // switching to niche
+    if (strcmp(conn->channel, CHANL_NICHE) == 0){ // already in niche
       char *err;
       asprintf(&err, "error: already in channel '%s'\n", CHANL_NICHE);
       insert_buffer(conn, err, RANK_SYS);
@@ -203,9 +215,79 @@ void processChannel(int argc, char *argv[], struct user *connList, int fd){
     }
     else{
       conn->channel = CHANL_NICHE;
-      insert_buffer(conn, mergeStrings(6, SYS_MSG, "Now in channel ", CHANL_NICHE, "\n", time_now(), "\n"), RANK_SYS);
+      remove_buffer_rank(conn, RANK_PUB); // remove previous channel's messages from buffer 
+      insert_buffer(conn, mergeStrings(5, SYS_MSG, "Now in channel ", CHANL_NICHE, "\n", time_now()), RANK_SYS);
     }
   }
+}
+
+void processDM(int argc, char *argv[], struct user *connList, int fd){
+  struct user *conn = get_user(connList, fd, NULL);
+  struct user *tmp_usr;
+  
+  if (argc == 1 || strcmp(argv[1], conn->uname) == 0) { // no arg to list users in channel. own uname to list users in private chat with you
+    char *user_list;
+
+    if (argc == 1) user_list = mergeStrings(4, SYS_MSG, "Users currently in channel '", conn->channel, "':\n");
+    
+    else if (strcmp(argv[1], conn->uname) == 0) user_list = mergeStrings(2, SYS_MSG, "Users in your DMs:\n");
+
+    char *tmp_str;
+    tmp_usr = connList;
+    
+    while(tmp_usr){
+      if(tmp_usr->channel == conn->channel){ // grab all users in current channel
+        tmp_str = mergeStrings(4, user_list, "\t", tmp_usr->uname, "\n");
+        free(user_list);
+        user_list = tmp_str; 
+      }
+
+      tmp_usr = tmp_usr->next;
+    }
+
+    tmp_str = mergeStrings(2, user_list, time_now()); // add timestamp to end of user list
+    free(user_list);
+    user_list = tmp_str;
+    
+    insert_buffer(conn, user_list, RANK_SYS); // add user list to buffer
+    return;
+  }
+  
+  char *uname = argv[1];
+  struct user *target = get_user(connList, -1, uname);
+
+
+
+  if (target == NULL){ // target doesn't exist
+    insert_buffer(conn, mergeStrings(3, "error: user '", uname, "' does not exist\n"), RANK_SYS);
+    return;
+  }
+
+  if (argc > 2) {
+    insert_buffer(conn, mergeStrings(4, "error: expected '", CMD_DM, uname, "'\n"), RANK_SYS);
+    return;
+  }
+
+  tmp_usr = connList;
+  while(tmp_usr){
+    if(strcmp(tmp_usr->uname, uname) == 0){ // found target
+      if(strcmp(conn->channel, uname) == 0){ // already in DM with target
+        insert_buffer(conn, mergeStrings(3, "error: already in '", uname, "'s DMs\n"), RANK_SYS);
+        return;
+      }
+      else{ // switch to DM with target
+        conn->channel = uname;
+        remove_buffer_rank(conn, RANK_PUB); // remove previous channel's messages from buffer 
+        remove_buffer_rank(conn, RANK_PRIV); // remove previous channel's messages from buffer 
+        insert_buffer(conn, mergeStrings(5, SYS_MSG, "Now in DM with ", uname, "\n", time_now()), RANK_PRIV);
+        return;
+      }
+      insert_buffer(conn, mergeStrings(3, "error: already in '", uname, "'s DMs\n"), RANK_PRIV);
+      return;
+    }
+    tmp_usr = tmp_usr->next;
+  }
+
 }
 
 void usage(int argc, char *argv[]) {
@@ -310,8 +392,8 @@ struct user *processMessage(char *message, struct user *connList, int fd){
     processChannel(tokenIndex, tokens, conn, fd);
   }
 
-  // else if(strcmp(command, CMD_DM) == 0)
-  //   connList = processDM(tokenIndex, tokens, connList, fd);
+  else if(strcmp(command, CMD_DM) == 0)
+    processDM(tokenIndex, tokens, connList, fd);
 
   // else if(strcmp(command, CMD_REQS) == 0)
   //   connList = processRequests(tokenIndex, tokens, connList, fd);
@@ -329,9 +411,9 @@ struct user *processMessage(char *message, struct user *connList, int fd){
       }
     } 
     
-    if(strcmp(conn->channel, CHANL_GEN) == 0 || strcmp(conn->channel, CHANL_NICHE) == 0){
-      update_buffers(connList, conn, tokens, tokenIndex);
-    }
+    // if(strcmp(conn->channel, CHANL_GEN) == 0 || strcmp(conn->channel, CHANL_NICHE) == 0){
+    update_buffers(connList, conn, tokens, tokenIndex);
+    // }
 
   }
 
@@ -481,7 +563,7 @@ int main(int argc, char *argv[]){
                 char *len = malloc((int)(ceil(log10(b_sent))+1));
                 
                 writeToFd(clientFds[i].fd, curr_user->outbuffer[0]);
-                curr_user = remove_buffer(curr_user, 0);
+                curr_user = remove_buffer_i(curr_user, 0);
 
                 clientFds[i].events = POLLIN;
               }

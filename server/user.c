@@ -4,13 +4,12 @@
 
 void release(struct user *connection) {
   free(connection->uname);
-  free(connection->channel);
 
   for(int i = 0; i < connection->reqs_len; i++) {
     if (connection->req_from[i])
       free(connection->req_from[i]);
-    if (connection->reqs[i])
-      free(connection->reqs[i]);
+    if (connection->req_messages[i])
+      free(connection->req_messages[i]);
   }
 
   for(int i = 0; i < connection->out_len; i++) {
@@ -32,7 +31,7 @@ struct user *conn_create(const char *uname, int fd) {
   asprintf(&newConn->outbuffer[0], "%sHello %s! Welcome to the server!\n%s", SYS_MSG, uname, time_now());
   newConn->out_rank[0] = 0;
 
-  newConn->channel = mergeStrings(2, CHANL_GEN, "\0"); // current channel. default is general
+  newConn->channel = CHANL_GEN; // current channel. default is general
   // char *tmp;
   // asprintf(&tmp, "%sNow in channel: %s\n%s", SYS_MSG, CHANL_GEN, time_now());
   asprintf(&newConn->outbuffer[1], "%sNow in channel: %s\n%s", SYS_MSG, CHANL_GEN, time_now());
@@ -122,7 +121,8 @@ struct user *empty_buffer(struct user *conn) {
   return conn;
 }
 
-struct user *remove_buffer(struct user *conn, int index){
+struct user *remove_buffer_i(struct user *conn, int index){
+
   if(index < 0 || index >= conn->out_len) return conn;
 
   if(conn->out_len == 1){
@@ -136,7 +136,8 @@ struct user *remove_buffer(struct user *conn, int index){
   }
 
   while(index < conn->out_len - 1){
-    free(conn->outbuffer[index]); // free the original string
+    if(conn->outbuffer[index])
+      free(conn->outbuffer[index]); // free the original string
     conn->outbuffer[index] = conn->outbuffer[index + 1]; // reassign the pointer to the next string
 
     conn->out_rank[index] = conn->out_rank[index + 1]; // reassign the rank
@@ -150,6 +151,15 @@ struct user *remove_buffer(struct user *conn, int index){
   return conn;
 }
 
+struct user *remove_buffer_rank(struct user *conn, int rank){
+  for(int i = 0; i < conn->out_len; i++){
+    if(conn->out_rank[i] == rank){
+      conn = remove_buffer_i(conn, i);
+    }
+  }
+  return conn;
+}
+
 struct user *pack_buffers(struct user *connList){
   // for each user in the list
   // merge all the messages of their buffer into one string
@@ -160,10 +170,13 @@ struct user *pack_buffers(struct user *connList){
       char *tmp = it->outbuffer[0];
       for(int i = 1; i < it->out_len; i++){
         tmp = mergeStrings(2, tmp, it->outbuffer[i]);
-        free(it->outbuffer[i]);
+        if(it->outbuffer[i])
+          free(it->outbuffer[i]);
         it->outbuffer[i] = NULL;
       }
-      free(it->outbuffer[0]);
+      if(it->outbuffer[0])
+        free(it->outbuffer[0]);
+
       it->outbuffer[0] = tmp;
       it->out_len = 1;
     }
@@ -178,7 +191,7 @@ struct user *insert_buffer(struct user *conn, char *message, const int rank){
     int overw = get_rank_i(conn);
     if(conn->out_rank[overw] == RANK_SYS && rank != RANK_SYS || (conn->out_rank[overw] == RANK_PRIV && rank == RANK_PUB)) return conn; // overwrite priority fail
     
-    conn = remove_buffer(conn, overw);
+    conn = remove_buffer_i(conn, overw);
     len = len-1;
   }
   
@@ -243,24 +256,24 @@ void update_buffers(struct user *connList, struct user *from, char *message[], c
   while(connList){
     int len = connList->out_len;
 
-    if(len == MAX_OUT){
+    if(len == MAX_OUT){ // check for overwite priority
       for(int i = 0; i < MAX_OUT - 1; i++){
-        if(connList->out_rank[i] == 3){
-          remove_buffer(connList, i);
+        if(connList->out_rank[i] == RANK_PUB){
+          remove_buffer_i(connList, i);
           connList->outbuffer[i] = *message;
-          connList->out_rank[i] = 3;
+          connList->out_rank[i] = RANK_PUB;
           break;
         }
       }
       connList = connList->next;
     }
-    if(strcmp(connList->channel, channel) != 0){
+    if(strcmp(connList->channel, channel) != 0 && strcmp(connList->uname, from->channel) != 0){ // not in the same channel, and not being delivered a DM
       connList = connList->next;
       continue;
     }
     else{
       connList->outbuffer[len] = mergeStrings(4, from->uname, ":\n    ", *message, time_now());
-      connList->out_rank[len] = 3;
+      connList->out_rank[len] = strcmp(connList->uname, from->channel) != 0 ? RANK_PUB : RANK_PRIV;
       connList->out_len++;
       connList = connList->next;
     }

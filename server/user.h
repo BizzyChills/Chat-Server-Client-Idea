@@ -12,7 +12,7 @@
 #define RANK_SYS 0
 #define RANK_PRIV 1 // priorities for output messages
 #define RANK_PUB 2
-#define SYS_MSG "System:\n\t"
+#define SYS_MSG "System:\n    "
 
 
 #include <stdio.h>
@@ -28,8 +28,8 @@ struct user {
   char *uname;
   int fd;
   char *channel;
-  char *req_from[MAX_PRIV];
-  char *reqs[MAX_PRIV];
+  char *req_from[MAX_PRIV]; // list of users who have currently open private channels with this user
+  char *req_messages[MAX_PRIV]; // User "uname" has opened a private channel with you. Send "CMD_DM uname" to join the channel.
   int reqs_len;
   char *outbuffer[MAX_OUT];
   int out_rank[MAX_OUT]; // 0 = sys, 1 = priv, 2 = pub
@@ -43,7 +43,8 @@ struct user *conn_create(const char *uname, int fd);
 struct user *get_user(struct user *list, const int fd, const char *uname);
 struct user *conn_insert(struct user **list, struct user *newConnection);
 struct user *conn_remove(struct user **list, struct user *toRemove);
-struct user *remove_buffer(struct user *conn, int index); // remove a message from a single client's output buffer
+struct user *remove_buffer_i(struct user *conn, int index); // remove a message from a single client's output buffer at index
+struct user *remove_buffer_rank(struct user *conn, int rank); // remove all messages of given rank from a single client's output buffer
 struct user *empty_buffer(struct user *conn); // remove all messages from a single client's output buffer
 struct user *pack_buffers(struct user *connList); // pack all messages from all clients into a single buffer
 struct user *insert_buffer(struct user *conn, char *message, const int rank); // insert a message into a single client's output buffer
