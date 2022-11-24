@@ -41,3 +41,23 @@ char *mergeStrings(int argc, ...) {
   return fullMessage;
 }
 
+char *time_now(){
+  FILE *fp = popen("date +%T", "r");
+  char *time = (char*)malloc(sizeof(char) * 11);
+  fgets(time, 11, fp);
+  pclose(fp);
+
+  // append a newline to the end of the time string
+  time[8] = '\n';
+  time[9] = '\n';
+  // time[10] = '\0';
+
+  return time;
+}
+
+char *itoa(int num){
+  // turn an integer into a malloced string
+  char *str = (char*)malloc(sizeof(char) * 12);
+  sprintf(str, "%d", num);
+  return str;
+}

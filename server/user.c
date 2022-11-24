@@ -1,22 +1,20 @@
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
 #include "user.h"
 
 
 void release(struct user *connection) {
   free(connection->uname);
 
-  if (connection->outBuffer)
-    free(connection->outBuffer);
-
   for(int i = 0; i < connection->reqs_len; i++) {
     if (connection->req_from[i])
       free(connection->req_from[i]);
-    if (connection->reqs[i])
-      free(connection->reqs[i]);
+    if (connection->req_messages[i])
+      free(connection->req_messages[i]);
+  }
+
+  for(int i = 0; i < connection->out_len; i++) {
+    if (connection->outbuffer[i])
+      free(connection->outbuffer[i]);
   }
 
   close(connection->fd);
@@ -29,12 +27,23 @@ struct user *conn_create(const char *uname, int fd) {
   newConn->uname = (char *) malloc(strlen(uname) * sizeof(char) + 1);
   newConn->uname = strcpy(newConn->uname, uname);
   newConn->fd = fd;
-  newConn->channel = "general"; // current channel. default is general
+
+  asprintf(&newConn->outbuffer[0], "%sHello %s! Welcome to the server!\n%s", SYS_MSG, uname, time_now());
+  newConn->out_rank[0] = 0;
+
+  newConn->channel = CHANL_GEN; // current channel. default is general
+  // char *tmp;
+  // asprintf(&tmp, "%sNow in channel: %s\n%s", SYS_MSG, CHANL_GEN, time_now());
+  asprintf(&newConn->outbuffer[1], "%sNow in channel: %s\n%s", SYS_MSG, CHANL_GEN, time_now());
+
+  // newConn->outbuffer[0] = mergeStrings(2, newConn->outbuffer[0], tmp);
+  newConn->out_len = 2; // number of messages stored in outbuffer, not the size of the buffer
+
   newConn->reqs_len = 0; // length of the request list
-  newConn->out_len = 0; // number of messages stored in outBuffer, not the size of the buffer
-  asprintf(&newConn->outBuffer, "System:\n\tHello %s! Welcome to the server!\n%s\n", uname, system("date +%T"));
   newConn->next = NULL;
   newConn->prev = NULL;
+
+  // free(tmp);
 
   return newConn;
 }
@@ -82,8 +91,15 @@ struct user *conn_remove(struct user **list, struct user *toRemove) {
 
 struct user *get_user(struct user *list, const int fd, const char *uname) {
   struct user *it = list;
+  while( it != NULL && uname != NULL) { // search by uname
+    if( strcmp(it->uname, uname) == 0 ) {
+      return it;
+    }
+    it = it->next;
+  }
 
-  while( it != NULL && !uname) {
+  it = list;
+  while( it != NULL && uname == NULL ) { // search by fd
     if(it->fd == fd ){
       return it;
     }
@@ -91,15 +107,98 @@ struct user *get_user(struct user *list, const int fd, const char *uname) {
     it = it->next;
   }
 
-  while( it != NULL && uname) {
-    if( strcmp(it->uname, uname) == 0 ) {
-      return it;
-    }
+  return NULL;
+}
 
-    it = it->next;
+struct user *empty_buffer(struct user *conn) {
+  for(int i = 0; i < conn->out_len; i++) {
+    if (conn->outbuffer[i]){
+      free(conn->outbuffer[i]);
+      conn->out_rank[i] = -1;
+    }
+  }
+  conn->out_len = 0;
+  return conn;
+}
+
+struct user *remove_buffer_i(struct user *conn, int index){
+
+  if(index < 0 || index >= conn->out_len) return conn;
+
+  if(conn->out_len == 1){
+    if(conn->outbuffer[index])
+      free(conn->outbuffer[index]);
+    
+    conn->outbuffer[index] = NULL;
+    conn->out_rank[index] = -1;
+    conn->out_len = 0;
+    return conn;
   }
 
-  return NULL;
+  while(index < conn->out_len - 1){
+    if(conn->outbuffer[index])
+      free(conn->outbuffer[index]); // free the original string
+    conn->outbuffer[index] = conn->outbuffer[index + 1]; // reassign the pointer to the next string
+
+    conn->out_rank[index] = conn->out_rank[index + 1]; // reassign the rank
+
+    index++;
+    
+    conn->outbuffer[index] = NULL; // and nullify
+    conn->out_rank[index] = -1; // set the next rank to null since it moved back one
+  }
+  conn->out_len--;
+  return conn;
+}
+
+struct user *remove_buffer_rank(struct user *conn, int rank){
+  for(int i = 0; i < conn->out_len; i++){
+    if(conn->out_rank[i] == rank){
+      conn = remove_buffer_i(conn, i);
+    }
+  }
+  return conn;
+}
+
+struct user *pack_buffers(struct user *connList){
+  // for each user in the list
+  // merge all the messages of their buffer into one string
+
+  struct user *it = connList;
+  while(it != NULL){
+    if(it->out_len > 1){
+      char *tmp = it->outbuffer[0];
+      for(int i = 1; i < it->out_len; i++){
+        tmp = mergeStrings(2, tmp, it->outbuffer[i]);
+        if(it->outbuffer[i])
+          free(it->outbuffer[i]);
+        it->outbuffer[i] = NULL;
+      }
+      if(it->outbuffer[0])
+        free(it->outbuffer[0]);
+
+      it->outbuffer[0] = tmp;
+      it->out_len = 1;
+    }
+    it = it->next;
+  }
+  return connList;
+}
+
+struct user *insert_buffer(struct user *conn, char *message, const int rank){
+  int len = conn->out_len;
+  if(len == MAX_OUT){ // if the buffer is full
+    int overw = get_rank_i(conn);
+    if(conn->out_rank[overw] == RANK_SYS && rank != RANK_SYS || (conn->out_rank[overw] == RANK_PRIV && rank == RANK_PUB)) return conn; // overwrite priority fail
+    
+    conn = remove_buffer_i(conn, overw);
+    len = len-1;
+  }
+  
+  conn->outbuffer[len] = message;
+  conn->out_rank[len] = rank;
+  conn->out_len = len == MAX_OUT ? MAX_OUT : len + 1;
+  return conn;
 }
 
 // void conn_fprint(FILE* file, struct user *list) {
@@ -137,31 +236,68 @@ int get_reqt(struct user *conn, char *from){
   return index == conn->reqs_len ? -1 : index;
 }
 
-void update_buffers(struct user *conn, const char *message){
-  while(conn){
-    if(conn->out_len == MAX_OUT) conn = conn->next;
-    conn->outBuffer = mergeStrings(conn->outBuffer, message);
-    conn->out_len++;
-    conn = conn->next;
+int get_rank_i(struct user*conn){
+  int rank_i = -1;
+  for(int i = 0; i < conn->out_len; i++){
+    if(conn->out_rank[i] > rank_i) rank_i = i;
   }
+  return rank_i;
 }
 
-int write_clients(struct user *conn) {
-  int err = 0;
+void update_buffers(struct user *connList, struct user *from, char *message[], const int argc) {
+  char *channel = from->channel;
+  int message_i = 1;
 
-  while(conn){ 
-    int len = strlen(conn->outBuffer);
-    int totalBytesWritten = 0;
-    do {
-      int bytesWritten = write(conn->fd, conn->outBuffer + totalBytesWritten, len - totalBytesWritten);
-      if( bytesWritten == -1 ) {
-        perror("writeToFd|write");
-        err = -1;
+  while(message_i < argc)
+    *message = mergeStrings(3, *message, ARGS_DELIM_STR, message[message_i++]);
+
+  *message = mergeStrings(2, *message, "\n");
+
+  while(connList){
+    int len = connList->out_len;
+
+    if(len == MAX_OUT){ // check for overwite priority
+      for(int i = 0; i < MAX_OUT - 1; i++){
+        if(connList->out_rank[i] == RANK_PUB){
+          remove_buffer_i(connList, i);
+          connList->outbuffer[i] = *message;
+          connList->out_rank[i] = RANK_PUB;
+          break;
+        }
       }
-
-      totalBytesWritten += bytesWritten;
-    } while(totalBytesWritten < len);
-    conn = conn->next;
+      connList = connList->next;
+    }
+    if(strcmp(connList->channel, channel) != 0 && strcmp(connList->uname, from->channel) != 0){ // not in the same channel, and not being delivered a DM
+      connList = connList->next;
+      continue;
+    }
+    else{
+      connList->outbuffer[len] = mergeStrings(4, from->uname, ":\n    ", *message, time_now());
+      connList->out_rank[len] = strcmp(connList->uname, from->channel) != 0 ? RANK_PUB : RANK_PRIV;
+      connList->out_len++;
+      connList = connList->next;
+    }
   }
-  return err;
 }
+
+
+
+// int write_clients(struct user *conn) {
+//   int err = 0;
+// 
+//   while(conn){ 
+//     int len = strlen(conn->outbuffer);
+//     int totalBytesWritten = 0;
+//     do {
+//       int bytesWritten = write(conn->fd, conn->outbuffer + totalBytesWritten, len - totalBytesWritten);
+//       if( bytesWritten == -1 ) {
+//         perror("writeToFd|write");
+//         err = -1;
+//       }
+// 
+//       totalBytesWritten += bytesWritten;
+//     } while(totalBytesWritten < len);
+//     conn = conn->next;
+//   }
+//   return err;
+// }
