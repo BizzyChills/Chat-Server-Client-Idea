@@ -1,7 +1,8 @@
 .vscode/
 manifest
-Makefile
 test.c
 t
 server/chat-server
+client/c
 client/cl
+
