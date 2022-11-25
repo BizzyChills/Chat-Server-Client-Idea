@@ -5,6 +5,6 @@ t
 s
 c
 server/chat-server
-client/c
-client/cl
+client/chat-client
+
 
