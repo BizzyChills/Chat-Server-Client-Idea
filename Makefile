@@ -1,18 +1,17 @@
 
-all: ./server/utils.h ./server/utils.c ./server/commands.h ./server/user.h ./server/user.c 
-	$(MAKE) test
+all: ./server/chat-server.c ./server/utils.h ./server/utils.c ./server/commands.h ./server/user.h ./server/user.c 
 	$(MAKE) -C ./server
 	$(MAKE) -C ./client
 
 CFLAGS=-g
 
-test: test.c ./server/utils.h ./server/utils.c ./server/commands.h ./server/user.h ./server/user.c 
-	cc $(CFLAGS) test.c ./server/utils.c ./server/user.c -o t -lm
+server: ./server/chat-server.c ./server/utils.h ./server/utils.c ./server/commands.h ./server/user.h ./server/user.c 
+	$(MAKE) -C ./server
+
+client: ./client/chat-client.c
+	$(MAKE) -C ./client
 
 clean:
-	rm -f t
 	rm -f ./server/chat-server
-	rm -f ./client/c
+	rm -f ./client/chat-client
 
-cleant:
-	rm -f t

@@ -2,6 +2,8 @@
 manifest
 test.c
 t
+s
+c
 server/chat-server
 client/c
 client/cl

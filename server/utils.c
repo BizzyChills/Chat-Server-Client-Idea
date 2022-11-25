@@ -50,7 +50,7 @@ char *time_now(){
   // append a newline to the end of the time string
   time[8] = '\n';
   time[9] = '\n';
-  // time[10] = '\0';
+  time[10] = '\0';
 
   return time;
 }

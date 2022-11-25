@@ -1,8 +1,14 @@
 #define _GNU_SOURCE
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+
 #ifndef USER_H
 #define USER_H
-#define MAX_PRIV 5
+#define MAX_PRIV 2
 #define MAX_USER 100
 #define MAX_UNAME 16
 #define MIN_UNAME 3
@@ -15,11 +21,6 @@
 #define SYS_MSG "System:\n    "
 
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
 
 #include "utils.h"
 #include "commands.h"
@@ -28,17 +29,23 @@ struct user {
   char *uname;
   int fd;
   char *channel;
-  char *req_from[MAX_PRIV]; // list of users who have currently open private channels with this user
-  char *req_messages[MAX_PRIV]; // User "uname" has opened a private channel with you. Send "CMD_DM uname" to join the channel.
+  
+  char *help_buffer; // help message is variable length (based on commands), so must be dynamically allocated
+  
+  int need_help;    // flag to indicate whether or not to send the help message. needed for the implementation of writing to the client
+  char *reqs_from[MAX_PRIV]; // list of users who have currently open private channels with this user
   int reqs_len;
-  char *outbuffer[MAX_OUT];
+  int reqs_notify; // 0 if user doesn't want to be notified when someone opens a private channel with them (default 1)
+  
+  char *outbuffer[MAX_OUT]; // output buffer for messages to be sent to the client
   int out_rank[MAX_OUT]; // 0 = sys, 1 = priv, 2 = pub
-  int out_len;
+  int out_len; // number of messages in the output buffer
+  
   struct user *next;
   struct user *prev;
 };
 
-void release(struct user *connection);
+void release(struct user *connList, struct user *connection);
 struct user *conn_create(const char *uname, int fd);
 struct user *get_user(struct user *list, const int fd, const char *uname);
 struct user *conn_insert(struct user **list, struct user *newConnection);
@@ -49,7 +56,8 @@ struct user *empty_buffer(struct user *conn); // remove all messages from a sing
 struct user *pack_buffers(struct user *connList); // pack all messages from all clients into a single buffer
 struct user *insert_buffer(struct user *conn, char *message, const int rank); // insert a message into a single client's output buffer
 // void conn_fprint(FILE* file, struct user *list);
-int get_reqt(struct user *conn, char *from);
+int req_remove(struct user *from, struct user *to);
+int DM_notify(struct user *connList, struct user *from, struct user *to);
 int get_rank_i(struct user *conn); // get the index of the lowest rank message in the output buffer
 void update_buffers(struct user *conn, struct user *from, char *message[], const int len); // update all client's buffers
 // int write_clients(struct user *conn);

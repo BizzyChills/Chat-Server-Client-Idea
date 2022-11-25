@@ -28,22 +28,21 @@
 #define TEMP_PORT 57300
 #define RESERVED_LEN 11 // number of reserved unames
 
-// global variables
-#define CMD_HELLO "HELLO"
-#define CMD_EXIT ">EXIT"
-#define CMD_CHANL ">"
-#define CMD_DM ">@"
-#define CMD_REQS ">!"
-#define CMD_HELP ">?"
-#define CMD_ESC "%"
-// #define CMD_REFRESH ">^"
-#define CMD_NOOP "NOOP"
-// #define CMD_ACCEPT "y"
+// // global variables
+// #define CMD_HELLO "HELLO"
+// #define CMD_EXIT ">EXIT"
+// #define CMD_CHANL ">"
+// #define CMD_DM ">@"
+// #define CMD_REQS ">!"
+// #define CMD_HELP ">?"
+// #define CMD_ESC "%"
+// // #define CMD_REFRESH ">^"
+// #define CMD_NOOP "NOOP"
+// // #define CMD_ACCEPT "y"
 
-#define ARGS_DELIM_CHAR ' '
-#define ARGS_DELIM_STR  " "
+// #define ARGS_DELIM_CHAR ' '
+// #define ARGS_DELIM_STR  " "
 
-char *HELP_MSG;
 const char *reserved_unames[RESERVED_LEN] = {"system", "server", "admin", "admins", "root", "administrator", "administrators", "moderator", "moderators", "mod", "mods"};
 
 int writeToFd(int fd, const char *message) {
@@ -200,13 +199,18 @@ void processChannel(int argc, char *argv[], struct user *connList, int fd){
       return;
     }
     else{
-      conn->channel = CHANL_GEN;
+      if(strcmp(conn->channel, CHANL_NICHE) != 0){ // are currently in a DM
+        req_remove(conn, get_user(connList, -1, conn->channel));
+      }
+      free(conn->channel);
+      conn->channel = malloc(strlen(CHANL_GEN) + 1);
+      strcpy(conn->channel, CHANL_GEN);
       remove_buffer_rank(conn, RANK_PUB); // remove previous channel's messages from buffer 
-      insert_buffer(conn, mergeStrings(5, SYS_MSG, "Now in channel ", CHANL_GEN, "\n", time_now()), RANK_SYS);
+      insert_buffer(conn, mergeStrings(5, SYS_MSG, "Now in channel: ", CHANL_GEN, "\n", time_now()), RANK_SYS);
     }
   }
 
-  if (strcmp(channel, CHANL_NICHE) == 0){ // switching to niche
+  else if (strcmp(channel, CHANL_NICHE) == 0){ // switching to niche
     if (strcmp(conn->channel, CHANL_NICHE) == 0){ // already in niche
       char *err;
       asprintf(&err, "error: already in channel '%s'\n", CHANL_NICHE);
@@ -214,11 +218,43 @@ void processChannel(int argc, char *argv[], struct user *connList, int fd){
       return;
     }
     else{
-      conn->channel = CHANL_NICHE;
+      if(strcmp(conn->channel, CHANL_GEN) !=0){ // are currently in a DM
+        req_remove(conn, get_user(connList, -1, conn->channel));
+      }
+      free(conn->channel);
+      conn->channel = malloc(strlen(CHANL_NICHE) + 1);
+      strcpy(conn->channel, CHANL_NICHE);
       remove_buffer_rank(conn, RANK_PUB); // remove previous channel's messages from buffer 
-      insert_buffer(conn, mergeStrings(5, SYS_MSG, "Now in channel ", CHANL_NICHE, "\n", time_now()), RANK_SYS);
+      insert_buffer(conn, mergeStrings(5, SYS_MSG, "Now in channel: ", CHANL_NICHE, "\n", time_now()), RANK_SYS);
     }
   }
+  else{
+    insert_buffer(conn, mergeStrings(3, "error: Unknown channel '", channel, "'\n\n"), RANK_SYS);
+  }
+}
+
+void channel_list(struct user *connList, struct user *conn, char *user_list){
+  user_list = mergeStrings(4, SYS_MSG, "Users currently in channel '", conn->channel, "':\n");
+  
+  char *tmp_str;
+  struct user *tmp_usr = connList;
+  
+  while(tmp_usr){
+    if(strcmp(tmp_usr->channel, conn->channel) == 0){ // grab all users in current channel
+      tmp_str = mergeStrings(4, user_list, "\t", tmp_usr->uname, "\n");
+      free(user_list);
+      user_list = tmp_str; 
+    }
+
+    tmp_usr = tmp_usr->next;
+  }
+
+  tmp_str = mergeStrings(2, user_list, time_now()); // add timestamp to end of user list
+  free(user_list);
+  user_list = tmp_str;
+  
+  insert_buffer(conn, user_list, RANK_SYS); // add user list to buffer
+  return;
 }
 
 void processDM(int argc, char *argv[], struct user *connList, int fd){
@@ -228,65 +264,66 @@ void processDM(int argc, char *argv[], struct user *connList, int fd){
   if (argc == 1 || strcmp(argv[1], conn->uname) == 0) { // no arg to list users in channel. own uname to list users in private chat with you
     char *user_list;
 
-    if (argc == 1) user_list = mergeStrings(4, SYS_MSG, "Users currently in channel '", conn->channel, "':\n");
+    if (argc == 1){
+      if(strcmp(conn->channel, CHANL_GEN) == 0 || strcmp(conn->channel, CHANL_NICHE) == 0) channel_list(connList, conn, user_list); // list users in channel
+
+      else insert_buffer(conn, mergeStrings(5, SYS_MSG, "You are currently in a private chat with ", conn->channel, "\n", time_now()), RANK_PRIV);// list whose private you're in 
+      
+      return;
+    }
     
-    else if (strcmp(argv[1], conn->uname) == 0) user_list = mergeStrings(2, SYS_MSG, "Users in your DMs:\n");
+    user_list = mergeStrings(2, SYS_MSG, "Users in your DMs:\n");
 
     char *tmp_str;
-    tmp_usr = connList;
-    
-    while(tmp_usr){
-      if(tmp_usr->channel == conn->channel){ // grab all users in current channel
-        tmp_str = mergeStrings(4, user_list, "\t", tmp_usr->uname, "\n");
-        free(user_list);
-        user_list = tmp_str; 
-      }
 
-      tmp_usr = tmp_usr->next;
+    for(int i = 0; i < conn->reqs_len; i++){ // grab all users in private chat waiting for you
+      tmp_str = mergeStrings(4, user_list, "\t", conn->reqs_from[i], "\n");
+      free(user_list);
+      user_list = tmp_str; 
     }
 
     tmp_str = mergeStrings(2, user_list, time_now()); // add timestamp to end of user list
     free(user_list);
     user_list = tmp_str;
     
-    insert_buffer(conn, user_list, RANK_SYS); // add user list to buffer
+    insert_buffer(conn, user_list, RANK_PRIV); // add user list to buffer
     return;
   }
   
   char *uname = argv[1];
+
+  if(strcmp(uname, "!") == 0){
+    conn->reqs_notify = !conn->reqs_notify;
+    insert_buffer(conn, mergeStrings(5, SYS_MSG, "You will ", conn->reqs_notify ? "now" : "no longer", " be notified of private chat requests\n", time_now()), RANK_SYS);
+    return;
+  }
   struct user *target = get_user(connList, -1, uname);
 
-
+  if (argc > 2) {
+    insert_buffer(conn, mergeStrings(4, "error: expected '", CMD_DM, uname, "'\n"), RANK_PRIV);
+    return;
+  }
 
   if (target == NULL){ // target doesn't exist
-    insert_buffer(conn, mergeStrings(3, "error: user '", uname, "' does not exist\n"), RANK_SYS);
+    insert_buffer(conn, mergeStrings(3, "error: user '", uname, "' does not exist\n"), RANK_PRIV);
     return;
   }
 
-  if (argc > 2) {
-    insert_buffer(conn, mergeStrings(4, "error: expected '", CMD_DM, uname, "'\n"), RANK_SYS);
-    return;
+  if(strcmp(conn->channel, uname) == 0){ // already in DM with target
+    insert_buffer(conn, mergeStrings(3, "error: already in ", uname, "'s DMs\n"), RANK_PRIV);
   }
-
-  tmp_usr = connList;
-  while(tmp_usr){
-    if(strcmp(tmp_usr->uname, uname) == 0){ // found target
-      if(strcmp(conn->channel, uname) == 0){ // already in DM with target
-        insert_buffer(conn, mergeStrings(3, "error: already in '", uname, "'s DMs\n"), RANK_SYS);
-        return;
-      }
-      else{ // switch to DM with target
-        conn->channel = uname;
-        remove_buffer_rank(conn, RANK_PUB); // remove previous channel's messages from buffer 
-        remove_buffer_rank(conn, RANK_PRIV); // remove previous channel's messages from buffer 
-        insert_buffer(conn, mergeStrings(5, SYS_MSG, "Now in DM with ", uname, "\n", time_now()), RANK_PRIV);
-        return;
-      }
-      insert_buffer(conn, mergeStrings(3, "error: already in '", uname, "'s DMs\n"), RANK_PRIV);
-      return;
-    }
-    tmp_usr = tmp_usr->next;
+  
+  
+  else if(DM_notify(connList, conn, target)){ // check if DM is possible
+    remove_buffer_rank(conn, RANK_PUB); // remove previous channel's messages from buffer 
+    remove_buffer_rank(conn, RANK_PRIV); // remove previous private channel's messages from buffer 
+    free(conn->channel);
+    conn->channel = malloc(strlen(uname) + 1);
+    strcpy(conn->channel, uname);
+    
+    insert_buffer(conn, mergeStrings(5, SYS_MSG, "Now in DM with ", uname, "\n", time_now()), RANK_SYS);
   }
+  return;
 
 }
 
@@ -298,50 +335,51 @@ void usage(int argc, char *argv[]) {
   printf("Supports the following commands:\n");
 
   printf("\t%s <username>\n", CMD_HELLO);
-  printf("\t\ton success: sends '%s <username>' through socket\n", CMD_HELLO);
-  printf("\t\ton failure: sends error: message through socket\n");
-  printf("\t\texample:\n");
-  printf("\t\t  %s bob\n\n", CMD_HELLO);
+  printf("\t    on success: sends '%s <username>' through socket\n", CMD_HELLO);
+  printf("\t    on failure: sends error: message through socket\n");
+  printf("\t    example:\n");
+  printf("\t\t%s bob\n\n", CMD_HELLO);
 
   printf("\t%s [channel-name]\n", CMD_CHANL);
-  printf("\t\t if no channel name is given, prints the current channel. Otherwise, switches user to specified channel.\n");
-  printf("\t\ton success: sends 'Now in channel: <channel-name>' from the system through socket\n");
-  printf("\t\ton failure: sends error: message 'Channel <channel-name> does not exist' through socket\n");
-  printf("\t\texamples:\n");
-  printf("\t\t  %s %s\n", CMD_CHANL, CHANL_GEN);
-  printf("\t\t  %s %s\n\n", CMD_CHANL, CHANL_NICHE);
+  printf("\t    if no channel name is given, prints the current channel. Otherwise, switches user to specified channel.\n");
+  printf("\t    on success: sends 'Now in channel: <channel-name>' from the system through socket\n");
+  printf("\t    on failure: sends error: message 'Channel <channel-name> does not exist' through socket\n");
+  printf("\t    examples:\n");
+  printf("\t\t%s %s\n", CMD_CHANL, CHANL_GEN);
+  printf("\t\t%s %s\n\n", CMD_CHANL, CHANL_NICHE);
 
-  printf("\t%s <username>\n", CMD_DM);
-  printf("\t\ton success: sends a message request to <username>\n");
-  printf("\t\ton failure: sends error: message through socket\n");
-  printf("\t\texamples:\n");
-  printf("\t\t  %s bob\n", CMD_DM);
-  printf("\t\t  %s ana\n\n", CMD_DM);
-
-  printf("\t%s\n", CMD_REQS);
-  printf("\t\ton success: list the user's inbound messsage requests\n");
-  printf("\t\ton failure: sends error: message through socket\n\n");
+  printf("\t%s [username]\n", CMD_DM);
+  printf("\t    if [username] is caller's username, lists people waiting in caller's DMs. Otherwise, enter [username]'s DMs\n");
+  printf("\t    on success: sends a message that user is in DMs\n");
+  printf("\t    on failure: sends error: message through socket\n\n");
+  printf("\t    if no username is given:\n");
+      printf("\t\tIf in a public channel, lists all users in that channel.\n");
+      printf("\t\tOtherwise, lists the user you are messaging.\n\n");
+  printf("\t    examples:\n");
+    printf("\t\t%s bob\n", CMD_DM);
+    printf("\t\t%s ana\n\n", CMD_DM);
 
   printf("\t%s<command>\n", CMD_ESC);
-  printf("\t\ton success: allows one to send a command as a standard message (or %s itself).\n", CMD_ESC);
-  printf("\t\ton failure: sends error: message through socket\n");
-  printf("\t\texamples:\n");
-  printf("\t\t  %s%s bob is how you'd DM bob\n", CMD_ESC, CMD_DM);
-  printf("\t\t  %s%s is the requests command\n\n", CMD_ESC, CMD_REQS);
+  printf("\t    on success: allows one to send a command as a standard message (or %s itself)\n", CMD_ESC);
+  printf("\t    on failure: sends error: message through socket\n");
+  printf("\t    examples:\n");
+  printf("\t\t%s%s bob is how you'd DM bob\n", CMD_ESC, CMD_DM);
+  printf("\t\t%s%s is how you escape the escape character\n\n", CMD_ESC, CMD_ESC);
 
   printf("\t%s\n", CMD_HELP);
-  printf("\t\ton success: sends a simplified version of this message\n");
-  printf("\t\ton failure: also sends said message with error message\n\n");
+  printf("\t    on success: sends a simplified version of this message\n");
+  printf("\t    on failure: also sends said message with error message\n\n");
 
   printf("\t''\n");
-  printf("\t\tcommand is empty string, and refreshes the client to recieve messages.\n");
-  printf("\t\ton success: sends pending messages to the client\n");
-  printf("\t\ton failure: sends error: message through socket\n\n");
+  printf("\t    note: command is empty string, and refreshes the client to recieve messages\n");
+  printf("\t    techincally, any message recieved from the client refreshes, but the empty string has no side-effects\n");
+  printf("\t    on success: sends pending messages to the client\n");
+  printf("\t    on failure: sends error: message through socket\n\n");
 
   printf("\t%s\n", CMD_EXIT);
-  printf("\t\tnote: this will close an open connection opened with a %s command\n", CMD_HELLO);
-  printf("\t\ton success: sends 'GOODBYE [username]' through socket\n");
-  printf("\t\ton failure: sends error: message through socket\n");
+  printf("\t    note: this will close an open connection opened with a %s command\n", CMD_HELLO);
+  printf("\t    on success: sends 'GOODBYE [username]' through socket\n");
+  printf("\t    on failure: sends error: message through socket\n");
   
 
 
@@ -373,13 +411,29 @@ struct user *processMessage(char *message, struct user *connList, int fd){
     return processHello(tokenIndex, tokens, connList, fd);
 
   struct user *conn = get_user(connList, fd, NULL);
+  if(strcmp(command, CMD_HELP) == 0){
+    if(conn == NULL){
+      char *err = mergeStrings(11, 
+      "Commands:\n", 
+      CMD_HELLO, " <username> - create a new session\n", 
+      CMD_EXIT, " - end your session\n", 
+      CMD_CHANL, " <channel> - switch to a different channel ('general' or 'niche')\n", 
+      CMD_DM, " [username] - send a private message to the specified user.\n\t\t If no username specified, list all users in the current channel\n", 
+      CMD_HELP, " - display this help message\n\n");
+      writeToFd(fd, err);
+      free(err);
+      return connList;
+    }
+
+    conn->need_help = 1;
+    return connList;
+  }
 
   if( conn == NULL ) {
     char *err = "error: You must say HELLO before accessing the server\n";
     writeToFd(fd, err);
     return connList;
   }
-
   
   if( strcmp(command, CMD_NOOP) == 0 || (tokenIndex == 1 && strcmp(command, "%") == 0)){ // noop or single escape char
     insert_buffer(conn, mergeStrings(2, "", ""), RANK_PUB);
@@ -395,11 +449,12 @@ struct user *processMessage(char *message, struct user *connList, int fd){
   else if(strcmp(command, CMD_DM) == 0)
     processDM(tokenIndex, tokens, connList, fd);
 
-  // else if(strcmp(command, CMD_REQS) == 0)
-  //   connList = processRequests(tokenIndex, tokens, connList, fd);
+  // else if(strcmp(command, CMD_REQS_NOTIFY) == 0)
+  //   conn->reqs_notify = !conn->reqs_notify;
+    // processRequests(tokenIndex, tokens, connList, fd);
 
   else if(strcmp(command, CMD_HELP) == 0){
-    insert_buffer(conn, HELP_MSG, RANK_SYS);
+    insert_buffer(conn, conn->help_buffer, RANK_SYS);
   }
 
   else {
@@ -442,14 +497,6 @@ int main(int argc, char *argv[]){
   // bind socket to port
   
   usage(argc, argv);
-
-  HELP_MSG = mergeStrings(11, 
-    "Commands:\n", 
-    CMD_HELLO, " <username> - create a new session\n", 
-    CMD_EXIT, " - end your session\n", 
-    CMD_CHANL, " <channel> - switch to a different channel ('general' or 'niche')\n", 
-    CMD_DM, " [username] - send a private message to the specified user.\n\t\t If no username specified, list all users in the current channel\n", 
-    CMD_HELP, " - display this help message\n\n");
 
   struct sockaddr_in address;
   struct in_addr ipAddress;
@@ -557,13 +604,16 @@ int main(int argc, char *argv[]){
             for(int i = 0; i < numberClients; i++){
               struct user *curr_user;
 
-              if(clientFds[i].revents & POLLOUT && (curr_user = get_user(clients, clientFds[i].fd, NULL)) && curr_user->outbuffer[0] != NULL){
-                int b_sent = strlen(curr_user->outbuffer[0]);
-
-                char *len = malloc((int)(ceil(log10(b_sent))+1));
-                
-                writeToFd(clientFds[i].fd, curr_user->outbuffer[0]);
-                curr_user = remove_buffer_i(curr_user, 0);
+              if(clientFds[i].revents & POLLOUT && (curr_user = get_user(clients, clientFds[i].fd, NULL))){
+                if(curr_user->need_help){
+                  curr_user->need_help = 0;
+                  writeToFd(clientFds[i].fd, curr_user->help_buffer);
+                } 
+                // only write help message if requested, don't include nor delete messages. 
+                else if(curr_user->outbuffer[0] != NULL){
+                  writeToFd(clientFds[i].fd, curr_user->outbuffer[0]);
+                  curr_user = remove_buffer_i(curr_user, 0);
+                }
 
                 clientFds[i].events = POLLIN;
               }

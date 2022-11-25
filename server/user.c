@@ -2,14 +2,31 @@
 #include "user.h"
 
 
-void release(struct user *connection) {
-  free(connection->uname);
+void release(struct user *connList, struct user *connection) {
+  struct user *conn;
+  if(connection->channel){ // if the user is in a DM, remove their request to the other user
+    if(strcmp(connection->channel, CHANL_GEN) != 0 && strcmp(connection->channel, CHANL_NICHE) != 0 && req_remove(connection, (conn = get_user(connList, -1, connection->channel))) == 0){
+      insert_buffer(conn, mergeStrings(3, "error: ", conn->channel, " has disconnected from the server\n\n"), RANK_SYS);
+      free(conn->channel);
+      conn->channel = malloc(strlen(CHANL_GEN) + 1);
+      strcpy(conn->channel, CHANL_GEN);
+      insert_buffer(conn, mergeStrings(5, SYS_MSG, "Now in channel: ", conn->channel, "\n", time_now()), RANK_SYS);
+    }
+    free(connection->channel);
+  }
 
   for(int i = 0; i < connection->reqs_len; i++) {
-    if (connection->req_from[i])
-      free(connection->req_from[i]);
-    if (connection->req_messages[i])
-      free(connection->req_messages[i]);
+    if (connection->reqs_from[i]){
+      conn = get_user(connList, -1, connection->reqs_from[i]);
+      if(conn) { // if there is a user in DM with this user, notify them that the user has left and change their channel to general
+        insert_buffer(conn, mergeStrings(3, "error: ", conn->channel, " has disconnected from the server\n\n"), RANK_SYS);
+        free(conn->channel);
+        conn->channel = malloc(strlen(CHANL_GEN) + 1);
+        strcpy(conn->channel, CHANL_GEN);
+        insert_buffer(conn, mergeStrings(5, SYS_MSG, "Now in channel: ", conn->channel, "\n", time_now()), RANK_SYS);
+      }
+      free(connection->reqs_from[i]);
+    }
   }
 
   for(int i = 0; i < connection->out_len; i++) {
@@ -17,6 +34,8 @@ void release(struct user *connection) {
       free(connection->outbuffer[i]);
   }
 
+  if(connection->uname) free(connection->uname);
+  if(connection->help_buffer) free(connection->help_buffer);
   close(connection->fd);
   free(connection);
 }
@@ -27,23 +46,32 @@ struct user *conn_create(const char *uname, int fd) {
   newConn->uname = (char *) malloc(strlen(uname) * sizeof(char) + 1);
   newConn->uname = strcpy(newConn->uname, uname);
   newConn->fd = fd;
+  newConn->help_buffer = mergeStrings(11, 
+    "Commands:\n\t", 
+    CMD_HELLO, " <username> - create a new session\n\t", 
+    CMD_EXIT, " - end your session\n\t", 
+    CMD_CHANL, " <channel> - switch to a different channel ('general' or 'niche')\n\t", 
+    CMD_DM, " [username] - send a private message to the specified user.\n\t\t\tIf no username specified, list all users in the current channel\n\t\t\tIf username is own username, lists all private message requests\n\t", 
+    CMD_HELP, " - display this help message\n\n");
+
+  newConn->need_help = 0; // help message print or not
+
+  newConn->reqs_notify = 1;
 
   asprintf(&newConn->outbuffer[0], "%sHello %s! Welcome to the server!\n%s", SYS_MSG, uname, time_now());
   newConn->out_rank[0] = 0;
 
-  newConn->channel = CHANL_GEN; // current channel. default is general
-  // char *tmp;
-  // asprintf(&tmp, "%sNow in channel: %s\n%s", SYS_MSG, CHANL_GEN, time_now());
+  newConn->channel = malloc(strlen(CHANL_GEN) + 1);
+  strcpy(newConn->channel, CHANL_GEN); // current channel. default is general
+
   asprintf(&newConn->outbuffer[1], "%sNow in channel: %s\n%s", SYS_MSG, CHANL_GEN, time_now());
 
-  // newConn->outbuffer[0] = mergeStrings(2, newConn->outbuffer[0], tmp);
   newConn->out_len = 2; // number of messages stored in outbuffer, not the size of the buffer
 
   newConn->reqs_len = 0; // length of the request list
   newConn->next = NULL;
   newConn->prev = NULL;
 
-  // free(tmp);
 
   return newConn;
 }
@@ -64,7 +92,7 @@ struct user *conn_remove(struct user **list, struct user *toRemove) {
       *list = NULL;
     }
 
-    release(toRemove);
+    release(*list, toRemove);
 
     return *list;
   }
@@ -72,20 +100,20 @@ struct user *conn_remove(struct user **list, struct user *toRemove) {
   if( toRemove->prev == NULL ) {
     struct user *newHead = toRemove->next;
     newHead->prev = NULL;
-    release(toRemove);
+    release(*list, toRemove);
     return newHead;
   }
 
   if( toRemove->next == NULL ) {
     struct user *newTail = toRemove->prev;
     newTail->next = NULL;
-    release(toRemove);
+    release(*list, toRemove);
     return *list;
   }
 
   toRemove->prev->next = toRemove->next;
   toRemove->next->prev = toRemove->prev;
-  release(toRemove);
+  release(*list, toRemove);
   return *list;
 }
 
@@ -167,13 +195,16 @@ struct user *pack_buffers(struct user *connList){
   struct user *it = connList;
   while(it != NULL){
     if(it->out_len > 1){
-      char *tmp = it->outbuffer[0];
+      char *tmp = it->outbuffer[0]; // malloced string
+      
       for(int i = 1; i < it->out_len; i++){
         tmp = mergeStrings(2, tmp, it->outbuffer[i]);
+        
         if(it->outbuffer[i])
           free(it->outbuffer[i]);
         it->outbuffer[i] = NULL;
       }
+
       if(it->outbuffer[0])
         free(it->outbuffer[0]);
 
@@ -222,18 +253,40 @@ struct user *insert_buffer(struct user *conn, char *message, const int rank){
 //   fprintf(file, "]\n");
 // }
 
-int get_reqt(struct user *conn, char *from){
+int req_remove(struct user *from, struct user *to){ // remove from from to's requests
+  for(int i = 0; i < to->reqs_len; i++){ // and shift the rest of the requests back
+    if(strcmp(to->reqs_from[i], from->uname) == 0){ // found target, remove
+      to->reqs_from[i] = NULL;
+      while(i < to->reqs_len - 1){
+        to->reqs_from[i] = to->reqs_from[i + 1];
+        i++;
+      }
+      to->reqs_len--;
+      return 1;
+    }
+  }
+  return 0;
+}
 
-  int index = 0;
-  struct user *it = conn;
+int DM_notify(struct user *connList, struct user *from, struct user *to){
 
-  while(index < it->reqs_len && strcmp(it->req_from[index], from) != 0){
-    index++;
+  if(to->reqs_len == MAX_PRIV){
+    insert_buffer(from, mergeStrings(2, to->uname, "'s inbox is full\n"), RANK_PRIV); // inbox full
+    return 0;
   }
 
-  // index = index == conn->reqs_len ? -1 : index;
+  if(strcmp(to->channel, from->uname) == 0){
+    return req_remove(to, from); //remove to, from from's reqs because to is already in from's channel
+  } // user is already in DM
+
+  if(to->reqs_notify)
+    insert_buffer(to, mergeStrings(8, SYS_MSG, from->uname, " has sent you a private message. Use '", CMD_DM, " ", from->uname, "' to open up a private channel with them\n", time_now()), RANK_PRIV);
   
-  return index == conn->reqs_len ? -1 : index;
+  to->reqs_from[to->reqs_len] = malloc(strlen(from->uname) + 1);
+  strcpy(to->reqs_from[to->reqs_len], from->uname);
+  to->reqs_len++;
+
+  return 1;
 }
 
 int get_rank_i(struct user*conn){

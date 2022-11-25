@@ -1,11 +1,10 @@
-all: cl.c
-	cc $(CFLAGS) cl.c -o c -lm
-
+all: chat-client.c
+	cc $(CFLAGS) chat-client.c -o c -lm
 
 CFLAGS=-g
 
-client: cl.c
-	cc $(CFLAGS) cl.c -o c -lm
+client: chat-client.c
+	cc $(CFLAGS) chat-client.c -o c -lm
 
 clean:
-	rm -f c
+	rm -f chat-client
