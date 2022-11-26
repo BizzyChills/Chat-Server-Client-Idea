@@ -20,17 +20,11 @@ and briefly describe how to use each feature.
 
 # How to run server
 
-1. Use makefile in root of project
-                or
-2. Use makefile in ./client (make -C ./server)
-                then
-3. Run "./server/chat-server \<port>" to start the server
+1. Use makefile in root of project or use makefile in ./client (make -C ./server)
+2. Run "./server/chat-server \<port>" to start the server
 
 # How to run client
 
-1. Use makefile in root of project
-                or
-2. Use makefile in ./client (make -C ./client)
-                then
-3. Run "./client/chat-client \<port>" to start the client 
-4. Send "HELLO \<uname>" to join the server. Send ">?" for a helpful list of commands
+1. Use makefile in root of project or use makefile in ./client (make -C ./client)
+2. Run "./client/chat-client \<port>" to start the client 
+3. Send "HELLO \<uname>" to join the server. Send ">?" for a helpful list of commands
