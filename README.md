@@ -24,7 +24,7 @@ and briefly describe how to use each feature.
                 or
 2. Use makefile in ./client (make -C ./server)
                 then
-3. Run "./server/chat-server <port>" to start the server
+3. Run "./server/chat-server \<port>" to start the server
 
 # How to run client
 
