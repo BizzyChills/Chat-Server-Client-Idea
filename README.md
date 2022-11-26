@@ -14,8 +14,8 @@ and briefly describe how to use each feature.
 # Features
 
 1. Use "> general" or "> niche" to change channels respecively
-2. Use ">@ [username]" to enter a user's DM. If username is own username, lists all private message requests. If username is absent, lists all memebers in the user's channel (or the DM their in)
-3. Use "%\<command>" to escape a command at the start of a message. Try escaping the escape.
+2. Use ">@ [username]" to send a user a DM. If username is own username, lists all private message requests. If username is absent, lists all memebers in the current channel or the current person they're DM-ing).
+3. Use "%\[command]" to escape a command at the start of a message. Try escaping the escape.
 4. (Make sure you use the HELLO command noted below before trying these. ">?" for help)
 
 # How to run server
