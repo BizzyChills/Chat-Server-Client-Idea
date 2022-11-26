@@ -33,4 +33,4 @@ and briefly describe how to use each feature.
 2. Use makefile in ./client (make -C ./client)
                 then
 3. Run "./client/chat-client <port>" to start the client 
-4. Send "HELLO <uname>" to join the server. Send ">?" for a complete list of commands
+4. Send "HELLO <uname>" to join the server. Send ">?" for a helpful list of commands
