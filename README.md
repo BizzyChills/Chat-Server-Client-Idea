@@ -14,8 +14,8 @@ and briefly describe how to use each feature.
 # Features
 
 1. Use "> general" or "> niche" to change channels respecively
-2. Use ">@ <username>" to enter a user's DM. If username is own username, lists all private message requests. If username is absent, lists all memebers in the user's channel (or the DM their in)
-3. Use "%<command>" to escape a command at the start of a message. Try escaping the escape.
+2. Use ">@ [username]" to enter a user's DM. If username is own username, lists all private message requests. If username is absent, lists all memebers in the user's channel (or the DM their in)
+3. Use "%\<command>" to escape a command at the start of a message. Try escaping the escape.
 4. (Make sure you use the HELLO command noted below before trying these. ">?" for help)
 
 # How to run server
@@ -32,5 +32,5 @@ and briefly describe how to use each feature.
                 or
 2. Use makefile in ./client (make -C ./client)
                 then
-3. Run "./client/chat-client <port>" to start the client 
-4. Send "HELLO <uname>" to join the server. Send ">?" for a helpful list of commands
+3. Run "./client/chat-client \<port>" to start the client 
+4. Send "HELLO \<uname>" to join the server. Send ">?" for a helpful list of commands
