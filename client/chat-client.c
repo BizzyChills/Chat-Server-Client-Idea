@@ -11,7 +11,7 @@
 #include <sys/ioctl.h>
 
 #define IP_ADDRESS "127.0.0.1"
-#define PORT 57300
+// #define PORT 57300
 
 
 void getInput(char *input) {
@@ -29,16 +29,15 @@ void getInput(char *input) {
 
 int main(int argc, char *argv[]) {
     char *message;
-
-    if(argc == 2){
-        message = malloc(strlen("HELLO\n") + strlen(argv[1]) + 1);
-        strcpy(message, "HELLO");
-        strcat(message, "\n");
-        strcat(message, argv[1]);
+    if(argc != 2) {
+        printf("Usage: %s <port>\n", argv[0]);
+        exit(1);
     }
+
     struct sockaddr_in serverAddress;
     serverAddress.sin_family = AF_INET;
-    serverAddress.sin_port = htons(PORT);
+    serverAddress.sin_port = htons(atoi(argv[1]));
+    // serverAddress.sin_port = htons(PORT);
     inet_aton(IP_ADDRESS, &serverAddress.sin_addr);
 
     int serverFd = socket(AF_INET, SOCK_STREAM, 0);

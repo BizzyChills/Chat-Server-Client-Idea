@@ -1,7 +1,7 @@
 
 #define CMD_HELLO "HELLO"
 #define CMD_EXIT ">EXIT"
-#define CMD_CHANNEL ">"
+#define CMD_CHANL ">"
 #define CMD_DM ">@"
 #define CMD_REQS_NOTIFY ">@ !"
 #define CMD_HELP ">?"

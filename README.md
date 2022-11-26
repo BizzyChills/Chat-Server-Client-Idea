@@ -13,17 +13,24 @@ and briefly describe how to use each feature.
 
 # Features
 
-1. TODO: document feature 1...
-2. TODO: document feature 2...
-3. TODO: document optional feature 3 or remove this line...
-4. TODO: document optional feature 4 or remove this line...
+1. Use "> general" or "> niche" to change channels respecively
+2. Use ">@ <username>" to enter a user's DM. If username is own username, lists all private message requests. If username is absent, lists all memebers in the user's channel (or the DM their in)
+3. Use "%<command>" to escape a command at the start of a message. Try escaping the escape.
+4. (Make sure you use the HELLO command noted below before trying these. ">?" for help)
 
 # How to run server
 
-1. TODO: document steps for building and/or running your server.
-2. TODO...
+1. Use makefile in root of project
+                or
+2. Use makefile in ./client (make -C ./server)
+                then
+3. Run "./server/chat-server <port>" to start the server
 
 # How to run client
 
-1. TODO: document steps for building and/or running your client.
-2. TODO...
+1. Use makefile in root of project
+                or
+2. Use makefile in ./client (make -C ./client)
+                then
+3. Run "./client/chat-client <port>" to start the client 
+4. Send "HELLO <uname>" to join the server. Send ">?" for a helpful list of commands
